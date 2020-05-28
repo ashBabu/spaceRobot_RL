@@ -11,3 +11,9 @@ import gym
 import spacecraftRobot
 env = gym.make('SpaceRobot-v0')
 ```
+
+![spacecraftRobot](free_floating_spacecraft.png?raw=true)
+
+<img src="free_floating_spacecraft.png" alt="spacecraftRobot" width="400" height="400"/>
+
+
