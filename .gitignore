@@ -6,3 +6,6 @@ node_modules
 # Generated files
 .psci
 output
+
+spaceRobot_env.egg-info*
+__pycache*
