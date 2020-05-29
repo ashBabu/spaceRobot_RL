@@ -49,7 +49,8 @@ class Model(tf.keras.Model):
         # Another way to sample actions:
         #   action = tf.random.categorical(logits, 1)
         # Will become clearer later why we don't use it.
-        return np.squeeze(logits, axis=-1), np.squeeze(value, axis=-1)
+        logits = np.hstack((np.squeeze(logits), 0.04, 0.04))
+        return np.squeeze(logits), np.squeeze(value)
 
 
 class A2CAgent:
