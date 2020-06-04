@@ -15,7 +15,8 @@ import gym
 import spacecraftRobot
 env = gym.make('SpaceRobot-v0')
 ```
-
+## Test DDPG
+```python train_spaceRobot.py```
 <!-- ![spacecraftRobot](free_floating_spacecraft.png?raw=true) -->
 
 <img style="float: left;" title="Free Floating Spacecraft with Robot Arm" src="free_floating_spacecraft.png" alt="spacecraftRobot" width="400" height="400"/>
@@ -28,4 +29,6 @@ env = gym.make('SpaceRobot-v0')
 
    ### Current issues:
    
-    1. How to set reward for grasping? Is it could be just negative of the distance between the end-effector and debris or add a camera and get images at every instant of time?
+    1. How to set reward for grasping? 
+    Is it could be just negative of the distance between the end-effector and debris 
+    or add a camera and get images at every instant of time?

@@ -9,3 +9,8 @@ output
 
 spaceRobot_env.egg-info*
 __pycache*
+training/
+recording/
+*.training*
+checkpoint
+style.css
