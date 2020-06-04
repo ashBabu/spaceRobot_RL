@@ -3,9 +3,10 @@ import argparse
 import logging
 import matplotlib.pyplot as plt
 import gym
-from a2c_agent import A2CAgent
-from a2c_agent import Model
-from gym import spaces, envs
+# from a2c_agent import A2CAgent
+# from a2c_agent import Model
+# from gym import spaces, envs
+from ddpg_agent.ddpg import DDPG
 import spacecraftRobot
 
 parser = argparse.ArgumentParser()
@@ -18,20 +19,24 @@ parser.add_argument('-p', '--plot_results', action='store_true', default=True)
 args = parser.parse_args()
 env = gym.make('SpaceRobot-v0')
 
-model = Model(num_actions=7)
-agent = A2CAgent(model, args.learning_rate)
+# model = Model(num_actions=7)
+# agent = A2CAgent(model, args.learning_rate)
+
+s_dim, a_dim = env.observation_space.shape[0], env.action_space.shape[0]
+agent = DDPG(env=env, s_dim=s_dim, a_dim=a_dim)
 
 logging.getLogger().setLevel(logging.INFO)
 
-rewards_history = agent.train(env, args.batch_size, args.num_updates)
-print("Finished training. Testing...")
-print("Total Episode Reward: %d out of 200" % agent.test(env, args.render_test))
+agent.train(render=True)
+# rewards_history = agent.train(env, args.batch_size, args.num_updates)
+# print("Finished training. Testing...")
+# print("Total Episode Reward: %d out of 200" % agent.test(env, args.render_test))
 
-if args.plot_results:
-    plt.style.use('seaborn')
-    plt.plot(np.arange(0, len(rewards_history), 10), rewards_history[::10])
-    plt.xlabel('Episode')
-    plt.ylabel('Total Reward')
-    plt.show()
+# if args.plot_results:
+#     plt.style.use('seaborn')
+#     plt.plot(np.arange(0, len(rewards_history), 10), rewards_history[::10])
+#     plt.xlabel('Episode')
+#     plt.ylabel('Total Reward')
+#     plt.show()
 
 
