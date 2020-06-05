@@ -27,8 +27,13 @@ env = gym.make('SpaceRobot-v0')
 
    The big cube is assumed to be the spacecraft and carries a robot arm which has seven rotary joints and has a gripper with two linear joints.
 
-   ### Current issues:
+### Current issues:
    
     1. How to set reward for grasping? 
     Is it could be just negative of the distance between the end-effector and debris 
     or add a camera and get images at every instant of time?
+
+### Ideas
+1. Demonstrated replay buffer
+2. Reaction-less control
+
