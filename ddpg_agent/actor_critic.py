@@ -11,7 +11,7 @@ class Actor:
         self.action_bound_range = action_bound_range
 
     def model(self):
-        state = Input(shape=self.state_dim, dtype='float32')
+        state = Input(shape=self.state_dim, dtype='float64')
         x = Dense(400, activation='relu', kernel_initializer=RU(-1/np.sqrt(self.state_dim), 1/np.sqrt(self.state_dim)))(
             state)
         x = Dense(300, activation='relu', kernel_initializer=RU(-1/np.sqrt(400), 1/np.sqrt(400)))(x)
@@ -25,7 +25,7 @@ class Critic:
         self.action_dim = action_dim
 
     def model(self):
-        state = Input(shape=self.state_dim, name='state_input', dtype='float32')
+        state = Input(shape=self.state_dim, name='state_input', dtype='float64')
         state_i = Dense(400, activation='relu')(state)
         action = Input(shape=(self.action_dim,), name='action_input')
         x = concatenate([state_i, action])
