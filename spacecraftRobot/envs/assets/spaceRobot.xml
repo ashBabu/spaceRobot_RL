@@ -176,13 +176,13 @@
     </actuator> -->
 
     <actuator>
-        <motor name="motor1" joint="sjoint1" gear='35'/> 
-        <motor name="motor2" joint="sjoint2" gear='35'/> 
-        <motor name="motor3" joint="sjoint3" gear='35'/> 
-        <motor name="motor4" joint="sjoint4" gear='35'/>
-        <motor name="motor5" joint="sjoint5" gear='35'/>
-        <motor name="motor6" joint="sjoint6" gear='35'/> 
-        <motor name="motor7" joint="sjoint7" gear='35'/> 
+        <motor name="motor1" joint="sjoint1" ctrlrange="-500 500" ctrllimited="true" />  <!-- gear='35' -->
+        <motor name="motor2" joint="sjoint2" ctrlrange="-500 500" ctrllimited="true" />  <!-- gear='35' -->
+        <motor name="motor3" joint="sjoint3" ctrlrange="-500 500" ctrllimited="true" />  <!-- gear='35' -->
+        <motor name="motor4" joint="sjoint4" ctrlrange="-500 500" ctrllimited="true" />  <!-- gear='35' -->
+        <motor name="motor5" joint="sjoint5" ctrlrange="-500 500" ctrllimited="true" />  <!-- gear='35' -->
+        <motor name="motor6" joint="sjoint6" ctrlrange="-500 500" ctrllimited="true" />  <!-- gear='35' -->
+        <motor name="motor7" joint="sjoint7" ctrlrange="-500 500" ctrllimited="true" />  <!-- gear='35' -->
         <position name="r_grip_finger_joint" joint="finger_joint1" class="spaceRobot_finger" kp="500" forcerange="-70 70" ctrlrange="0 0.04"/>
         <position name="l_grip_finger_joint" joint="finger_joint2" class="spaceRobot_finger" kp="500" forcerange="-70 70" ctrlrange="0 0.04"/>
     </actuator>
