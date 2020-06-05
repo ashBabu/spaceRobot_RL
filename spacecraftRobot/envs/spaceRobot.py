@@ -89,8 +89,10 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         """
         return np.concatenate([self.sim.data.qpos[7:], self.sim.data.qvel[6:]]).ravel()
 
-    def reward(self, target_loc, endEff_loc):
-        return -np.linalg.norm((target_loc - endEff_loc))
+    def reward(self, target_loc, endEff_loc, act, base_linVel, base_angVel):
+        act, base_linVel, base_angVel = np.squeeze(act), np.squeeze(base_linVel), np.squeeze(base_angVel)
+        rw_vel = np.dot(base_angVel, base_angVel) + np.dot(base_linVel, base_linVel)
+        return -np.linalg.norm((target_loc - endEff_loc)) - 0.0001 * np.dot(act, act) - 0.001 * rw_vel
 
     def done(self, reward):
         if np.abs(reward) < 1e-03:
@@ -102,7 +104,9 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         self.do_simulation(act, self.frame_skip)
         target_loc = self.data.get_site_xpos('debrisSite')
         endEff_loc = self.data.get_site_xpos('end_effector')
-        reward = self.reward(target_loc, endEff_loc)
+        base_linVel = self.data.get_site_xvelp('baseSite')
+        base_angVel = self.data.get_site_xvelr('baseSite')
+        reward = self.reward(target_loc, endEff_loc, act, base_linVel, base_angVel)
         done = self.done(reward)
         obs = self._get_obs()
         return obs, reward, done, {}
