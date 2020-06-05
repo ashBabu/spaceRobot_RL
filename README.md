@@ -1,6 +1,7 @@
 ## Pre-requisites
 1. Install MuJoCo as explained in [here](https://github.com/ashBabu/Utilities/wiki/Useful#install-mujoco-youtube)
 2. Install ```mujoco-py``` as explained in [here](https://github.com/ashBabu/Utilities/wiki/Useful#install-mujoco-py) or [mujoco-py github](https://github.com/openai/mujoco-py#install-mujoco)
+3. Tensorflow 2.x to run DDPG
 
 ## Installation
 <link rel="stylesheet" type="text/css" href="style.css">
