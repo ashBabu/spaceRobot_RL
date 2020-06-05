@@ -67,7 +67,8 @@ class DDPG:
         cp_callback1 = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_dir,
                                                           save_weights_only=True,
                                                           verbose=1)
-        self.critic.fit([s_batch, a_batch], y, verbose=0, steps_per_epoch=8, callbacks=[cp_callback1])
+        self.critic.train_on_batch([s_batch, a_batch], y)
+        # self.critic.fit([s_batch, a_batch], y, verbose=0, steps_per_epoch=8, callbacks=[cp_callback1])
 
         with tf.GradientTape(persistent=True) as tape:
             a = self.actor(s_batch)
@@ -78,6 +79,12 @@ class DDPG:
         da_dtheta = tape.gradient(a, theta, output_gradients=-dq_da)
         self.actor_opt.apply_gradients(zip(da_dtheta, self.actor.trainable_variables))
         self.update_target()
+
+    def get_action(self, s):
+        if np.random.rand(1) < 0.2:
+            return self.env.action_space.sample()
+        else:
+            return self.actor(s[None, :])
 
     def train(self, render=False):
         # current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -90,7 +97,7 @@ class DDPG:
                 for _ in range(50):
                     if render:
                         self.env.render()
-                    a = self.actor(s[None, :])
+                    a = self.get_action(s)
                     s_, r, d, _ = self.env.step(a)
                     self.replay_buffer.add(np.reshape(s, (self.s_dim,)), np.reshape(a, (self.a_dim,)), r,
                                            d, np.reshape(s_, (self.s_dim,)))
@@ -101,8 +108,8 @@ class DDPG:
                     #     tf.summary.scalar('episode reward', R, step=5)
                     # tf.summary.scalar('running avg reward(100)', avg_rewards, step=n)
                     # tf.summary.scalar('average loss)', losses, step=n)
-                    # print('Reward per episode :', R)
-            self.actor.save('training/actor.h5')
+                print('Reward per episode :', R)
+            # self.actor.save('training/actor.h5')
 
 
 if __name__ == '__main__':
