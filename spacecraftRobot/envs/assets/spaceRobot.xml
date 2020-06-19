@@ -57,15 +57,16 @@
         <light directional="false" diffuse=".8 .8 .8" specular="0.3 0.3 0.3" pos="1 -1 3" dir="-1 1 -3"/>
         <light directional="false" diffuse=".8 .8 .8" specular="0.3 0.3 0.3" pos="-1 0 3" dir="1 0 -3" />
         <!-- <geom name="ground" pos="0 0 0" size="20 20 20" material="MatGnd" type="plane" contype="1" conaffinity="1"/> -->
-        <body name="sdebris" pos="-2 3 5.5" >
-            <inertial mass="20" pos="0 0 0" diaginertia="14 14 20"/>
-            <joint name="freeDebrisJoint" type="free"/>
-            <geom size="0.05 0.05 0.15" type="box" rgba=".7 .4 0.6 0.9" />
-            <site name="debrisSite" pos="0 0 0" type="sphere" size="0.01" rgba="0.1 0.2 0.3 1" />
-        </body>
+        <site name="debrisSite" pos="-2 0 5.5" rgba="0.2 0.6 0.2 0.25" size=".05" type="sphere" />
+<!--        <body name="sdebris" pos="-2 3 5.5" >-->
+<!--            <inertial mass="20" pos="0 0 0" diaginertia="14 14 20"/>-->
+<!--            <joint name="freeDebrisJoint" type="free"/>-->
+<!--            <geom size="0.05 0.05 0.15" type="box" rgba=".7 .4 0.6 0.9" />-->
+<!--            <site name="debrisSite" pos="0 0 0" type="sphere" size="0.01" rgba="0.1 0.2 0.3 1" />-->
+<!--        </body>-->
         <body name="spacecraft_base" pos="0 0 5" >
             <site name="baseSite" pos="0 0 0" type="sphere" size="0.01" rgba="0.1 0.2 0.3 1" />
-            <inertial mass="800" pos="0 0 0" diaginertia="3400 3400 3040"/>
+            <inertial mass="400" pos="0 0 0" diaginertia="3400 3400 3040"/>
             <joint name="BasefloatingJoint" type="free"/>
             <geom size="1.05 1.05 1.05" type="box" rgba="1 1 0.6 1" />
             <body name="spacecraft_link1" pos="1.2268 1.2268 0" quat="0.653281 -0.653281 0.270598 -0.270598">
@@ -102,7 +103,7 @@
 
                                         <body name="leftfinger" pos="0 0 0.5154" euler='0 0 -1.57' childclass='spaceRobot_finger'>
                                             <inertial pos="-1.57863e-05 0.0118731 0.0434103" quat="0.705868 0.0310348 -0.0314925 0.706962" mass="0.0927059" diaginertia="6.57134e-05 6.09611e-05 1.09932e-05" />
-                                            <joint name="finger_joint1"  axis="0 1 0" type="slide" range="0 0.04" class="spaceRobot_finger"/>
+<!--                                            <joint name="finger_joint1"  axis="0 1 0" type="slide" range="0 0.04" class="spaceRobot_finger"/>-->
 
                                             <geom class="spaceRobot_viz" mesh="finger_viz"/>
                                             <!-- <geom class="spaceRobot_col" mesh="finger_col"/> -->
@@ -129,7 +130,7 @@
 
                                         <body name="rightfinger" pos="0 0 0.5154" euler='0 0 -1.57'  childclass='spaceRobot_finger'>
                                             <inertial pos="1.57863e-05 -0.0118731 0.0434103" quat="0.705868 -0.0310348 0.0314925 0.706962" mass="0.0927059" diaginertia="6.57134e-05 6.09611e-05 1.09932e-05" />
-                                            <joint name="finger_joint2" axis="0 -1 0" type="slide" range="0 0.04" class="spaceRobot_finger"/>
+<!--                                            <joint name="finger_joint2" axis="0 -1 0" type="slide" range="0 0.04" class="spaceRobot_finger"/>-->
                                             <geom quat="0 0 0 1" class="spaceRobot_viz" mesh="finger_viz"/>
                                             <!-- <geom class="spaceRobot_col" mesh="finger_col"/> -->
                                             <geom size="0.0070" fromto=".009 -.006 .0875   -.009 -.009 .0875" type="capsule" />
@@ -183,8 +184,8 @@
         <motor name="motor5" joint="sjoint5" ctrlrange="-200 200" ctrllimited="true" />  <!-- gear='32' -->
         <motor name="motor6" joint="sjoint6" ctrlrange="-200 200" ctrllimited="true" />  <!-- gear='32' -->
         <motor name="motor7" joint="sjoint7" ctrlrange="-200 200" ctrllimited="true" />  <!-- gear='32' -->
-        <position name="r_grip_finger_joint" joint="finger_joint1" class="spaceRobot_finger" kp="500" forcerange="-70 70" ctrlrange="0 0.04"/>
-        <position name="l_grip_finger_joint" joint="finger_joint2" class="spaceRobot_finger" kp="500" forcerange="-70 70" ctrlrange="0 0.04"/>
+<!--        <position name="r_grip_finger_joint" joint="finger_joint1" class="spaceRobot_finger" kp="500" forcerange="-70 70" ctrlrange="0 0.04"/>-->
+<!--        <position name="l_grip_finger_joint" joint="finger_joint2" class="spaceRobot_finger" kp="500" forcerange="-70 70" ctrlrange="0 0.04"/>-->
     </actuator>
 
     <sensor>
