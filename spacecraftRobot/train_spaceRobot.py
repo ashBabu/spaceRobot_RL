@@ -27,7 +27,7 @@ agent = DDPG(env=env, s_dim=s_dim, a_dim=a_dim)
 
 logging.getLogger().setLevel(logging.INFO)
 
-agent.train(render=True)
+agent.train(render=1)
 # rewards_history = agent.train(env, args.batch_size, args.num_updates)
 # print("Finished training. Testing...")
 # print("Total Episode Reward: %d out of 200" % agent.test(env, args.render_test))

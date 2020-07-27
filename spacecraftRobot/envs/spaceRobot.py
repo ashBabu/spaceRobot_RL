@@ -75,7 +75,7 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         end_eff_pos(hand_sid): 3
         relative_dist between end_eff and target: 3
         """
-        self.observation_dim = 33
+        self.observation_dim = 39
         self.action_dim = 7
         print('Environment Successfully Created')
 
@@ -110,14 +110,14 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         """
         return np.concatenate([self.sim.data.qpos.ravel(),
                                self.sim.data.qvel.ravel(),
-                               self.data.site_xpos[self.hand_sid],
-                               self.data.site_xpos[self.hand_sid] - self.data.site_xpos[self.target_sid],
-                               self.data.site_xvelp[self.hand_sid] - self.data.site_xvelp[self.target_sid],
-                               self.data.site_xvelr[self.hand_sid] - self.data.site_xvelr[self.target_sid],
+                               # self.data.site_xpos[self.hand_sid],
+                               # self.data.site_xpos[self.hand_sid] - self.data.site_xpos[self.target_sid],
+                               # self.data.site_xvelp[self.hand_sid] - self.data.site_xvelp[self.target_sid],
+                               # self.data.site_xvelr[self.hand_sid] - self.data.site_xvelr[self.target_sid],
                                ])
 
     def reward(self, target_loc, endEff_loc, act, base_linVel, base_angVel):
-        lam_a, lam_b = 0, 0
+        lam_a, lam_b = 0.001, 0
         act, base_linVel, base_angVel = np.squeeze(act), np.squeeze(base_linVel), np.squeeze(base_angVel)
         rw_vel = np.dot(base_angVel, base_angVel) + np.dot(base_linVel, base_linVel)
         return -np.linalg.norm((target_loc - endEff_loc)) - lam_a * np.dot(act, act) - lam_a * rw_vel

@@ -62,7 +62,7 @@ for i in range(job_data['num_traj']):
     start_time = timer.time()
     print("Currently optimizing trajectory : %i" % i)
     seed = job_data['seed'] + i * 12345
-    e.reset_model(seed=seed)
+    e.reset(seed=seed)
 
     agent = MPPI(e,
                  H=job_data['plan_horizon'],

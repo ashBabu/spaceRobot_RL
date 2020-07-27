@@ -5,11 +5,6 @@ Utility functions useful for TrajOpt algos
 import numpy as np
 import multiprocessing as mp
 import tensor_utils
-# from trajopt.envs.utils import get_environment
-
-import gym
-# import mjrl.envs
-# import trajopt.envs
 from mjrl.utils.gym_env import GymEnv
 
 
@@ -62,10 +57,9 @@ def discount_sum(x, gamma, discounted_terminal=0.0):
     """
     y = []
     run_sum = discounted_terminal
-    for t in range( len(x)-1, -1, -1):
+    for t in range(len(x)-1, -1, -1):
         run_sum = x[t] + gamma*run_sum
         y.append(run_sum)
-
     return np.array(y[::-1])
 
 
@@ -113,7 +107,6 @@ def gather_paths_parallel(env_id, start_state, base_act, filter_coefs, base_seed
     for result in results:
         for path in result:
             paths.append(path)
-
     return paths
 
 
@@ -124,7 +117,6 @@ def _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts):
 
     if num_cpu == 1:
         results = [generate_paths_star(args_list[0])]  # dont invoke multiprocessing unnecessarily
-
     else:
         pool = mp.Pool(processes=num_cpu, maxtasksperchild=1)
         parallel_runs = [pool.apply_async(generate_paths_star,
@@ -138,10 +130,8 @@ def _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts):
             pool.terminate()
             pool.join()
             return _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts - 1)
-
         pool.close()
         pool.terminate()
         pool.join()
-
     return results
 

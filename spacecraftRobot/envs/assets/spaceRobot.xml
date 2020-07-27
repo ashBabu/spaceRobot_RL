@@ -66,7 +66,7 @@
 <!--        </body>-->
         <body name="spacecraft_base" pos="0 0 5" >
             <site name="baseSite" pos="0 0 0" type="sphere" size="0.01" rgba="0.1 0.2 0.3 1" />
-            <inertial mass="400" pos="0 0 0" diaginertia="3400 3400 3040"/>
+            <inertial mass="100" pos="0 0 0" diaginertia="1400 1400 1040"/>
             <joint name="BasefloatingJoint" type="free"/>
             <geom size="1.05 1.05 1.05" type="box" rgba="1 1 0.6 1" />
             <body name="spacecraft_link1" pos="1.2268 1.2268 0" quat="0.653281 -0.653281 0.270598 -0.270598">
