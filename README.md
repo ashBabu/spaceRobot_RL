@@ -20,6 +20,15 @@ env = gym.make('SpaceRobot-v0')
 ```python train_spaceRobot.py```
 <!-- ![spacecraftRobot](free_floating_spacecraft.png?raw=true) -->
 
+## Test POLO 
+Plan Online Learn Offline is a value function learning paper using trajectory optimization.
+Details availabe at [POLO](https://sites.google.com/view/polo-mpc#h.p_tuHcQ8dmvkmr)
+1. ```cd POLO```
+2. ```python job_script1.py```
+
+**Note**: Needs ```mujoco-py```
+
+
 <img style="float: left;" title="Free Floating Spacecraft with Robot Arm" src="free_floating_spacecraft.png" alt="spacecraftRobot" width="400" height="400"/>
 
 
@@ -27,6 +36,7 @@ env = gym.make('SpaceRobot-v0')
    The debris could be stationary or rotating about some arbitrary axis. The aim is to capture the debris and bring it back to a station.
 
    The big cube is assumed to be the spacecraft and carries a robot arm which has seven rotary joints and has a gripper with two linear joints.
+   
 ### Reward:
 Currently it is composed of three parts. 
 
