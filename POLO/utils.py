@@ -5,7 +5,7 @@ Utility functions useful for TrajOpt algos
 import numpy as np
 import multiprocessing as mp
 import tensor_utils
-from mjrl.utils.gym_env import GymEnv
+from gym_env import GymEnv
 
 
 def get_environment(env_id):

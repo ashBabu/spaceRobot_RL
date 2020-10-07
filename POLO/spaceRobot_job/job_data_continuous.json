@@ -1,6 +1,6 @@
 {
-    "env_name": "SpaceRobot-v0",
-    "H_total": 50,
+    "env_name": "SpaceRobotContinuous-v0",
+    "H_total": 500,
     "num_traj": 1,
     "seed": 12345,
     "num_iter": 1,

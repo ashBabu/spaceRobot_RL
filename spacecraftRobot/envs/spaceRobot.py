@@ -47,8 +47,8 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         self.real_step = True
         self.env_timestep = 0
 
-        self.target_sid = 0
         self.hand_sid = 2
+        self.target_sid = 0
 
         fullpath = os.path.join(os.path.dirname(__file__), "assets", "spaceRobot.xml")
         mujoco_env.MujocoEnv.__init__(self, fullpath, 2)
@@ -85,6 +85,7 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
             self.seed(seed)
         # assert self.init_state.qpos == qpos and self.init_state.qvel == qvel
         self.set_state(self.init_qpos, self.init_qvel)
+        self.target_reset()
         self.env_timestep = 0
         return self._get_obs()
 
@@ -107,9 +108,13 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         3. endEff (2 linear joint velocities)
         Total: 15
         Grant Total: 31
+
+        site_xvelp: position_jacobian * joint_vel
+        site_xvelr: rotational_jacobian * joint_vel
         """
         return np.concatenate([self.sim.data.qpos.ravel(),
                                self.sim.data.qvel.ravel(),
+                               # self.model.site_pos[self.hand_sid],
                                # self.data.site_xpos[self.hand_sid],
                                # self.data.site_xpos[self.hand_sid] - self.data.site_xpos[self.target_sid],
                                # self.data.site_xvelp[self.hand_sid] - self.data.site_xvelp[self.target_sid],
@@ -146,7 +151,8 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         v.cam.distance = self.model.stat.extent
 
     def get_env_state(self):
-        target_pos = self.data.get_site_xpos('debrisSite').copy()
+        # target_pos1 = self.data.get_site_xpos('debrisSite').copy()
+        target_pos = self.model.site_pos[self.target_sid].copy()
         return dict(qp=self.data.qpos.copy(), qv=self.data.qvel.copy(),
                     qa=self.data.qacc.copy(),
                     target_pos=target_pos, timestep=self.env_timestep)
@@ -158,11 +164,23 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         qa = state_dict['qa'].copy()
         target_pos = state_dict['target_pos']
         self.env_timestep = state_dict['timestep']
-        self.data.site_xpos[self.target_sid] = target_pos
+        self.model.site_pos[self.target_sid] = target_pos
+        # self.data.site_xpos[self.target_sid] = target_pos
         self.sim.forward()
         self.data.qpos[:] = qp
         self.data.qvel[:] = qv
         self.data.qacc[:] = qa
+        self.sim.forward()
+
+    def target_reset(self):
+        # target_pos = np.array([-1, -1, 5])
+        # target_pos = self.data.get_site_xpos('debrisSite').copy()
+        target_pos = self.model.site_pos[self.target_sid]
+        a = 0.9
+        target_pos[0] -= self.np_random.uniform(low=-a, high=a)
+        target_pos[1] -= self.np_random.uniform(low=-a, high=a)
+        target_pos[2] -= self.np_random.uniform(low=-.1, high=.1)
+        self.model.site_pos[self.target_sid] = target_pos
         self.sim.forward()
 
     # def set_cam_position(self, viewer, cam_pos):
@@ -180,11 +198,19 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     #     return self.model.body_names.index(six.b(body_name))
 
 
+class SpaceRobotContinuousEnv(SpaceRobotEnv):
+
+    def trigger_timed_events(self):
+        if self.env_timestep % 50 == 0 and self.env_timestep > 0 and self.real_step is True:
+            self.target_reset()
+
+
 if __name__ == "__main__":
 
     import gym
     import spacecraftRobot
     env = gym.make('SpaceRobot-v0')
+    # env = gym.make('SpaceRobotContinuous-v0')
     """
     #####################################
     env.model.body_id2name(2)

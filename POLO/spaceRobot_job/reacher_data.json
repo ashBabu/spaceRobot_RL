@@ -1,6 +1,6 @@
 {
-    "env_name": "SpaceRobot-v0",
-    "H_total": 50,
+    "env_name": "Reacher-v2",
+    "H_total": 300,
     "num_traj": 1,
     "seed": 12345,
     "num_iter": 1,

@@ -24,12 +24,15 @@ parser = argparse.ArgumentParser(description='Trajectory Optimization with filte
 OUT_DIR = 'spaceRobot_job/'  # args.output
 if not os.path.exists(OUT_DIR):
     os.mkdir(OUT_DIR)
+# config = 'configs/spaceRobot_continous.txt'
 config = 'configs/spaceRobot.txt'
 with open(config, 'r') as f:
     job_data = eval(f.read())
 
 # Unpack args and make files for easy access
 ENV_NAME = job_data['env_name']
+# PICKLE_FILE = OUT_DIR + '/trajectories_continuous.pickle'
+# EXP_FILE = OUT_DIR + '/job_data_continuous.json'
 PICKLE_FILE = OUT_DIR + '/trajectories.pickle'
 EXP_FILE = OUT_DIR + '/job_data.json'
 SEED = job_data['seed']

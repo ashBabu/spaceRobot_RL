@@ -16,9 +16,9 @@ if __name__ == '__main__':
 
     env = gym.make('Pendulum-v0')
     # env = Pendulum()
-    a_dim = 1 # env.action_space.n
+    a_dim = env.action_space.shape[0]
     layer_size = [32, 32]
-    s_dim = 3  # env.observation_space.shape[0]
+    s_dim = env.observation_space.shape[0]
     ddpg = DDPG(env, s_dim=s_dim, a_dim=a_dim)
     # actor_trained.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001), loss='mean_squared_error')
     # x, y = np.random.rand(2, 3), np.array([0.8, 0.4])
@@ -40,7 +40,7 @@ if __name__ == '__main__':
             obs, _, done, _ = env.step(a)
             states_all.append(obs)
             a_all.append(a)
-            # env.render()
+            env.render()
             if done:
                 break
         states = np.squeeze(np.array(states_all))  # cos(theta), sin(theta), theta_dot

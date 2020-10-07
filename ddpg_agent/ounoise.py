@@ -2,28 +2,30 @@ import numpy as np
 
 
 class OUNoise(object):
-    def __init__(self, action_space, mu=0.0, theta=0.15, max_sigma=0.2, min_sigma=-0.2, decay_period=100):
-        self.mu = mu
+    def __init__(self, mean, std_deviation=0.2, theta=0.15, dt=1e-2, state=None):
+        self.mu = mean
         self.theta = theta
-        self.sigma = max_sigma
-        self.max_sigma = max_sigma
-        self.min_sigma = min_sigma
-        self.decay_period = decay_period
-        self.action_dim = action_space
-        self.low = -2
-        self.high = 2
+        self.sigma = std_deviation
+        self.dt = dt
+        self.state = state
         self.reset()
 
     def reset(self):
-        self.state = np.ones(self.action_dim) * self.mu
+        if self.state is not None:
+            self.state_prev = self.state
+        else:
+            self.state_prev = np.zeros_like(self.mu)
 
-    def evolve_state(self):
-        x = self.state
-        dx = self.theta * (self.mu - x) + self.sigma * np.random.randn(self.action_dim)
-        self.state = x + dx
-        return self.state
+    def __call__(self):
+        # Formula taken from https://www.wikipedia.org/wiki/Ornstein-Uhlenbeck_process.
+        # dx_{t}= \theta * (\mu -x_{t}) * dt+\sigma * dW_{t}, where W_t is a weiner process
+        dx = self.theta * (self.mu - self.state_prev) * self.dt + np.sqrt(self.dt) * self.sigma * np.random.normal(size=self.mu.shape)
+        self.state_prev += dx
+        return self.state_prev
 
-    def get_action(self, action, t=0):
-        ou_state = self.evolve_state()
-        self.sigma = self.max_sigma - (self.max_sigma - self.min_sigma) * min(1.0, t / self.decay_period)
-        return np.clip(action*0.2 + ou_state, self.low, self.high)
+
+if __name__ == '__main__':
+    mean, std_dev = np.zeros(1)+0.13, 0.2
+    ou_ash = OUNoise(mean=mean, std_deviation=std_dev)
+    print(ou_ash())
+    print('hi')
