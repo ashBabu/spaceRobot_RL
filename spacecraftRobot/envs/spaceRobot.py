@@ -121,8 +121,12 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
                                # self.data.site_xvelr[self.hand_sid] - self.data.site_xvelr[self.target_sid],
                                ])
 
-    def reward(self, target_loc, endEff_loc, act, base_linVel, base_angVel):
+    def reward(self, act):
         lam_a, lam_b = 0.001, 0
+        target_loc = self.data.get_site_xpos('debrisSite')
+        endEff_loc = self.data.get_site_xpos('end_effector')
+        base_linVel = self.data.get_site_xvelp('baseSite')
+        base_angVel = self.data.get_site_xvelr('baseSite')
         act, base_linVel, base_angVel = np.squeeze(act), np.squeeze(base_linVel), np.squeeze(base_angVel)
         rw_vel = np.dot(base_angVel, base_angVel) + np.dot(base_linVel, base_linVel)
         return -np.linalg.norm((target_loc - endEff_loc)) - lam_a * np.dot(act, act) - lam_a * rw_vel
@@ -135,11 +139,7 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
 
     def step(self, act):
         self.do_simulation(act, self.frame_skip)
-        target_loc = self.data.get_site_xpos('debrisSite')
-        endEff_loc = self.data.get_site_xpos('end_effector')
-        base_linVel = self.data.get_site_xvelp('baseSite')
-        base_angVel = self.data.get_site_xvelr('baseSite')
-        reward = self.reward(target_loc, endEff_loc, act, base_linVel, base_angVel)
+        reward = self.reward(act)
         done = self.done(reward)
         obs = self._get_obs()
         self.env_timestep += 1
