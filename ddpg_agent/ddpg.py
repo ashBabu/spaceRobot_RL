@@ -160,7 +160,7 @@ class DDPG:
                     episode_reward += r
                     if self.replay_buffer.size() > self.minibatch_size:
                         q = self.train_step()
-                    s = s_
+                    s = s_.reshape(1, -1)
                     if interruption():
                         break
                 ep_reward_list.append(episode_reward)
