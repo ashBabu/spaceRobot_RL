@@ -14,6 +14,8 @@ from spacerobot_env import SpaceRobotEnv
 # import spacecraftRobot
 import time
 import mppi_polo
+from tensorflow.keras.callbacks import EarlyStopping
+import pandas as pd
 
 np.set_printoptions(precision=3, suppress=True)
 
@@ -22,8 +24,8 @@ print('This will work only with Tensorflow 2.x')
 
 class MBRL:
     # dynamics=None and reward=None uses the env.step() to calculate the next_state and reward
-    def __init__(self, dynamics=1, reward=1, env_name='SpaceRobot-v0', lr=0.001, horizon=20,
-                 rollouts=100, epochs=150, bootstrapIter=1000):
+    def __init__(self, dynamics=1, reward=1, env_name='SpaceRobot-v0', lr=0.001, horizon=50,
+                 rollouts=50, epochs=150, bootstrapIter=100):
         # self.env = gym.make(env_name)
         self.env = SpaceRobotEnv()
         self.env.reset()
@@ -36,6 +38,7 @@ class MBRL:
         self.s_dim = self.env.observation_space.shape[0]
         self.a_low, self.a_high = self.env.action_space.low, self.env.action_space.high
         self.lr = lr
+        self.early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=25)
 
         if dynamics is None:
             self.dynamics = dynamics
@@ -50,6 +53,10 @@ class MBRL:
         self.rollouts = rollouts  # K
         self.epochs = epochs
         self.bootstrapIter = bootstrapIter
+        self.val_num = 2000
+        self.storeValData = self.collectValdata(self.val_num)
+        self.X_val, self.Y_val = self.preprocess(self.storeValData)
+
         self.storeData = None  # np.random.randn(self.bootstrapIter, self.s_dim + self.a_dim)
 
         self.dyn = self.dyn_model(21, 14)
@@ -63,7 +70,7 @@ class MBRL:
 
         self.mppi_gym = mppi_polo.MPPI(self.env, dynamics=self.dynamics, reward=self.reward,
                      H=self.horizon,
-                     paths_per_cpu=32,
+                     paths_per_cpu=300,
                      num_cpu=1,
                      kappa=5,
                      gamma=1,
@@ -77,10 +84,11 @@ class MBRL:
         if train:
             self.bootstrap(self.bootstrapIter)
             total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, self.train,
-                                                                iter=iter, retrain_after_iter=30)
-            np.save('actions_test1.npy', actions, allow_pickle=True)
+                                                                iter=iter, retrain_after_iter=30, render=False)
+            np.save('actions.npy', np.array(actions), allow_pickle=True)
         else:
-            total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env)
+            total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, iter=iter)
+            np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
 
     def reward_batch(self, x0, act):
         lam_a, lam_b = 0.001, 0
@@ -94,15 +102,15 @@ class MBRL:
         state['qp'], state['qv'], state['timestep'] = np.zeros(14), np.zeros(13), 0
         if ss:
             for i in range(ss):
-                self.env_cpy.reset()
+                # self.env_cpy.reset()
                 state['qp'], state['qv'] = s0[i, :14], s0[i, 14:]
                 self.env_cpy.set_env_state(state)
                 endEff_loc = self.env_cpy.data.get_site_xpos('end_effector')
-                base_linVel = self.env_cpy.data.get_site_xvelp('baseSite')
-                base_angVel = self.env_cpy.data.get_site_xvelr('baseSite')
+                # base_linVel = self.env_cpy.data.get_site_xvelp('baseSite')
+                # base_angVel = self.env_cpy.data.get_site_xvelr('baseSite')
                 # act, base_linVel, base_angVel = np.squeeze(act), np.squeeze(base_linVel), np.squeeze(base_angVel)
-                rw_vel = np.dot(base_angVel, base_angVel) + np.dot(base_linVel, base_linVel)
-                reward[i] = -np.linalg.norm((self.target_loc - endEff_loc)) - lam_a * np.dot(act[i], act[i]) - lam_a * rw_vel
+                # rw_vel = np.dot(base_angVel, base_angVel) + np.dot(base_linVel, base_linVel)
+                reward[i] = -np.linalg.norm((self.target_loc - endEff_loc)) - lam_a * np.dot(act[i], act[i]) #- lam_a * rw_vel
         else:
             state['qp'], state['qv'] = s0[:14], s0[14:]
             self.env_cpy.set_env_state(state)
@@ -131,6 +139,7 @@ class MBRL:
             s1 = np.hstack((state[:, 7:14], state[:, 20:27]))
             s1_tr, act_tr = self.scalarX.transform(s1), self.scalarU.transform(u)
             s2 = np.hstack((s1_tr, act_tr))
+            # pred_dx = np.squeeze(self.dyn(s2.reshape(*s2.shape, 1)).numpy())  ## if model is lstm
             pred_dx = np.squeeze(self.dyn(s2[None, :]).numpy())
             state_residual = dt * self.scalardX.inverse_transform(pred_dx)
 
@@ -151,19 +160,19 @@ class MBRL:
         state1 = dict()
         state1['qp'], state1['qv'], state1['timestep'] = np.zeros(14), np.zeros(13), 0
         next_state = np.zeros_like(state)
-        if state.ndim == 1:
-            s1 = np.hstack((state[7:14], state[20:27]))
-            s1_tr, act_tr = self.scalarX.transform(s1.reshape(1, -1)), self.scalarU.transform(u.reshape(1, -1))
-            s2 = np.hstack((s1_tr, act_tr))
-            pred_dx = np.squeeze(self.dyn(s2[None, :]).numpy())
-            state_residual = dt * self.scalardX.inverse_transform(pred_dx.reshape(1, -1)).squeeze()
-        else:
+        # if state.ndim == 1:
+        #     s1 = np.hstack((state[7:14], state[20:27]))
+        #     s1_tr, act_tr = self.scalarX.transform(s1.reshape(1, -1)), self.scalarU.transform(u.reshape(1, -1))
+        #     s2 = np.hstack((s1_tr, act_tr))
+        #     pred_dx = np.squeeze(self.dyn(s2[None, :]).numpy())
+        #     state_residual = dt * self.scalardX.inverse_transform(pred_dx.reshape(1, -1)).squeeze()
+        # else:
+        self.env_cpy.reset()
+        for i in range(ss):
+            state1['qp'], state1['qv'] = state[i, :14], state[i, 14:]
+            self.env_cpy.set_env_state(state1)
+            next_state[i], _, _, _ = self.env_cpy.step(u[i])
             self.env_cpy.reset()
-            for i in range(ss):
-                state1['qp'], state1['qv'] = state[i, :14], state[i, 14:]
-                self.env_cpy.set_env_state(state1)
-                next_state[i], _, _, _ = self.env_cpy.step(u[i])
-                self.env_cpy.reset()
         return next_state
 
     def preprocess(self, data, fit=False):
@@ -186,23 +195,62 @@ class MBRL:
         return inputs, outputs
 
     def dyn_model(self, in_dim, out_dim):
+        ##############################################################
+        lr_schedule = tf.keras.optimizers.schedules.InverseTimeDecay(
+            0.001,
+            decay_steps=5 * 1000,
+            decay_rate=1,
+            staircase=False)
+        optimizer = tf.keras.optimizers.Adam(lr_schedule)
         model = tf.keras.Sequential([
             tf.keras.Input(shape=(in_dim, )),
+            tf.keras.layers.Dropout(0.2),
             # tf.keras.layers.Dense(64, activation='relu'),
-            # tf.keras.layers.Dense(64, activation='relu'),
+            tf.keras.layers.Dense(64, activation='sigmoid'),
+            tf.keras.layers.Dropout(0.2),
             # tf.keras.layers.Dense(64, activation='relu'),
             tf.keras.layers.Dense(64, activation='relu'),
+            tf.keras.layers.Dropout(0.2),
             tf.keras.layers.Dense(64, activation='tanh'),
             tf.keras.layers.Dense(out_dim),
         ])
+
+        #"""
+        # Sequential Model
+        #################
         # model.compile(optimizer='adam', loss='kl_divergence', metrics=['accuracy'])
-        model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+        # model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+        # """
+
+        """
+        # LSTM Model
+        ###########
+        model = tf.keras.Sequential()
+        model.add(tf.keras.layers.LSTM(units=50, return_sequences=True, input_shape=(in_dim, 1)))
+        model.add(tf.keras.layers.Dropout(0.2))
+        # Adding a second LSTM layer and Dropout layer
+        model.add(tf.keras.layers.LSTM(units=50, return_sequences=True))
+        model.add(tf.keras.layers.Dropout(0.2))
+        # Adding a third LSTM layer and Dropout layer
+        model.add(tf.keras.layers.LSTM(units=50, return_sequences=True))
+        model.add(tf.keras.layers.Dropout(0.2))
+        # Adding a fourth LSTM layer and and Dropout layer
+        model.add(tf.keras.layers.LSTM(units=50))
+        model.add(tf.keras.layers.Dropout(0.2))
+        # Adding the output layer
+        # For Full connection layer we use dense
+        # As the output is 1D so we use unit=1
+        model.add(tf.keras.layers.Dense(units=out_dim))
+        # model.compile(optimizer='adam', loss='mae')
+        """
+        model.compile(optimizer=optimizer, loss='mse')
+
         return model
 
     def angle_normalize(self, x):
         return ((x + np.pi) % (2 * np.pi)) - np.pi
 
-    def train(self, dataset, fit=False):
+    def train(self, dataset, fit=False, model='LSTM'):
         """
         Trying to find the increment in states, f_(theta), from the equation
         s_{t+1} = s_t + dt * f_(theta)(s_t, a_t)
@@ -226,18 +274,22 @@ class MBRL:
         else:
             self.storeData = dataset
         inputs, outputs = self.preprocess(self.storeData[1:], fit=fit)
-
+        if model == 'LSTM':
+            inputs = inputs.reshape(*inputs.shape, 1)
+            outputs = outputs.reshape(*outputs.shape, 1)
         self.dyn.fit(
                     inputs,
                     outputs,
-                    batch_size=64,
+                    batch_size=45,
                     epochs=100,
                     # We pass some validation for
                     # monitoring validation loss and metrics
                     # at the end of each epoch
-                    # validation_data=(X_val, Y_val),
+                    validation_data=(self.X_val, self.Y_val),
+                    callbacks=[self.early_stop]
                     )
-
+        self.losses = pd.DataFrame(self.dyn.history.history)
+        print('hi')
         # create scaler
         # fit and transform in one step
         # normalized = scaler.fit_transform(dataset)
@@ -262,6 +314,7 @@ class MBRL:
         # logger.info("bootstrapping with random action for %d actions", self.bootstrapIter)
         new_data = np.zeros((bootstrapIter, self.s_dim + self.a_dim))
         # new_data = np.zeros((bootstrapIter, num_arm_states+a_dim))
+        self.env_cpy.reset()
         for i in range(bootstrapIter):
             # pre_action_state = self.env.state  # [num_base_states:]
             pre_action_state = self.env_cpy.state_vector()  # [num_base_states:]
@@ -276,6 +329,33 @@ class MBRL:
         self.storeData = new_data
         # logger.info("bootstrapping finished")
         self.env_cpy.reset()
+
+    def loss(self, data):
+        """
+        :param data: a batch of (state, action) concatenated
+        :return: loss = (1/N)*(Y - f(X_i))**2 for a batch
+        """
+        N = data.shape[0]
+        inputs, outputs = self.preprocess(data)  # inputs = normalized (state, action), outputs = normalized (s'-s)
+        Ypred = self.dyn(inputs)
+        loss_ = tf.math.reduce_mean(tf.math.square(Ypred - outputs))
+        return loss_
+
+    def collectValdata(self, val_num):
+        new_data = np.zeros((val_num, self.s_dim + self.a_dim))
+        self.env_cpy.reset()
+        for i in range(val_num):
+            # pre_action_state = self.env.state  # [num_base_states:]
+            pre_action_state = self.env_cpy.state_vector()  # [num_base_states:]
+            # pre_action_state = env_cpy.state_vector()[num_base_states:]
+            action = self.policy(pre_action_state)
+            # action = np.random.uniform(low=self.a_low, high=self.a_high)
+            self.env_cpy.step(action)
+            new_data[i, :self.s_dim] = pre_action_state
+            new_data[i, self.s_dim:] = action
+        self.env_cpy.reset()
+        print('Finished collecting validation dataset')
+        return new_data
 
     def policy(self, observation):  # random policy
         return self.env.action_space.sample()
@@ -319,7 +399,8 @@ class MBRL:
 
 if __name__ == '__main__':
 
+    train = True
     # mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, dynamics=None, reward=None)  # to run using env.step()
     mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001)  # to run using dyn and rew
-    # mbrl.bootstrap(100000)
-    mbrl.run_mbrl(train=True, iter=500)
+    mbrl.run_mbrl(train=train, iter=200)
+    mbrl.losses[['loss', 'val_loss']].plot()

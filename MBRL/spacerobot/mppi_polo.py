@@ -215,8 +215,8 @@ class MPPI:
                Length of act_list is the number of desired rollouts.
         """
         paths = []
-        H = act_list[0].shape[0]
-        N = len(act_list)
+        H = act_list[0].shape[0]  # Horizon
+        N = len(act_list)  # = K rollouts
         if self.step:
             self.env_cpy.reset_model()
             for i in range(N):
@@ -227,16 +227,19 @@ class MPPI:
                 states = []
 
                 for k in range(H):
-                    obs.append(self.env_cpy.env._get_obs())
+                    # obs.append(self.env_cpy.env._get_obs())
                     act.append(act_list[i][k])
-                    states.append(self.env_cpy.get_env_state())
+                    # states.append(self.env_cpy.get_env_state())
                     s, r, d, ifo = self.env_cpy.step(act[-1])
                     rewards.append(r)
 
-                path = dict(observations=np.array(obs),
-                            actions=np.array(act),
+                # path = dict(observations=np.array(obs),
+                #             actions=np.array(act),
+                #             rewards=np.array(rewards),
+                #             states=states)
+                path = dict(actions=np.array(act),
                             rewards=np.array(rewards),
-                            states=states)
+                            )
                 paths.append(path)
         else:
             next_states = np.zeros((N, H, self.nx))  # N x H x nx
@@ -247,9 +250,13 @@ class MPPI:
             rewards = np.zeros((N, H))
             nn = 1
             for t in range(H):
+                # t_rew = time.time()
                 reward = self.reward_fn(s0_batch, act[:, t, :])
+                # print('rew time:', time.time() - t_rew)
                 rewards[:, t] = reward
+                # t_nxt = time.time()
                 next_state = self.fwd_dyn(s0_batch, act[:, t, :])
+                # print('next state time:', time.time() - t_nxt)
                 next_states[:, t, :] = next_state
                 s0_batch = next_state
                 nn += 1
@@ -294,7 +301,7 @@ class MPPI:
         args_list = []
         for i in range(num_cpu):
             cpu_seed = base_seed + i * paths_per_cpu
-            args_list_cpu = [ start_state, paths_per_cpu, base_act, filter_coefs, cpu_seed]
+            args_list_cpu = [start_state, paths_per_cpu, base_act, filter_coefs, cpu_seed]
             args_list.append(args_list_cpu)
 
         # do multiprocessing
@@ -349,11 +356,12 @@ def run_mppi(mppi, env, retrain_dynamics=None, retrain_after_iter=50, iter=200, 
     # dataset = np.zeros((iter, mppi.nx + mppi.nu))
     total_reward = 0
     states, actions = [], []
+    nn = 0
     for i in range(iter):
         # state = env.env.state.copy()
         state = env.get_env_state().copy()
         s0 = np.hstack((state['qp'], state['qv']))
-        print('state:', s0)
+        # print('state:', s0)
         command_start = time.perf_counter()
         mppi.control(state)
         action = mppi.act_sequence[0]
@@ -374,9 +382,11 @@ def run_mppi(mppi, env, retrain_dynamics=None, retrain_after_iter=50, iter=200, 
         if render:
             env.render()
         di = i % retrain_after_iter
+        # if nn <= 7:
         if retrain_dynamics and di == 0 and i > 0:
             retrain_dynamics(dataset)
-            # don't have to clear dataset since it'll be overridden, but useful for debugging
+            nn += 1
+                # don't have to clear dataset since it'll be overridden, but useful for debugging
         dataset[di, :mppi.nx] = env.state_vector()
         dataset[di, mppi.nx:] = action
     # np.save('actions.npy', np.array(actions), allow_pickle=True)
