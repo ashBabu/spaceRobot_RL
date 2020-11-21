@@ -10,11 +10,12 @@ import tensorflow as tf
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, QuantileTransformer
 import tensorflow.keras.optimizers as opt
 import copy
+from ddpg_agent.looptools import Loop_handler, Monitor
 from spacerobot_env import SpaceRobotEnv
 # import spacecraftRobot
 import time
 import mppi_polo
-from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
 import pandas as pd
 
 np.set_printoptions(precision=3, suppress=True)
@@ -24,8 +25,8 @@ print('This will work only with Tensorflow 2.x')
 
 class MBRL:
     # dynamics=None and reward=None uses the env.step() to calculate the next_state and reward
-    def __init__(self, dynamics=1, reward=1, env_name='SpaceRobot-v0', lr=0.001, horizon=50,
-                 rollouts=50, epochs=150, bootstrapIter=100):
+    def __init__(self, dynamics=1, reward=1, env_name='SpaceRobot-v0', lr=0.001, horizon=20,
+                 rollouts=50, epochs=150, bootstrapIter=1000):
         # self.env = gym.make(env_name)
         self.env = SpaceRobotEnv()
         self.env.reset()
@@ -55,7 +56,6 @@ class MBRL:
         self.bootstrapIter = bootstrapIter
         self.val_num = 2000
         self.storeValData = self.collectValdata(self.val_num)
-        self.X_val, self.Y_val = self.preprocess(self.storeValData)
 
         self.storeData = None  # np.random.randn(self.bootstrapIter, self.s_dim + self.a_dim)
 
@@ -63,7 +63,7 @@ class MBRL:
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
         # self.dyn.load_weights('save_weights/trained_weights')
-
+        self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()))
         self.scalarX = StandardScaler()  # MinMaxScaler(feature_range=(-1,1))#StandardScaler()# RobustScaler()
         self.scalarU = MinMaxScaler(feature_range=(-1, 1))
         self.scalardX = MinMaxScaler(feature_range=(-1, 1))
@@ -250,7 +250,7 @@ class MBRL:
     def angle_normalize(self, x):
         return ((x + np.pi) % (2 * np.pi)) - np.pi
 
-    def train(self, dataset, fit=False, model='LSTM'):
+    def train(self, dataset, fit=False, model='LSTM', preprocessVal=False):
         """
         Trying to find the increment in states, f_(theta), from the equation
         s_{t+1} = s_t + dt * f_(theta)(s_t, a_t)
@@ -274,6 +274,9 @@ class MBRL:
         else:
             self.storeData = dataset
         inputs, outputs = self.preprocess(self.storeData[1:], fit=fit)
+        if preprocessVal:
+            self.X_val, self.Y_val = self.preprocess(self.storeValData)
+            a = 0
         if model == 'LSTM':
             inputs = inputs.reshape(*inputs.shape, 1)
             outputs = outputs.reshape(*outputs.shape, 1)
@@ -286,7 +289,7 @@ class MBRL:
                     # monitoring validation loss and metrics
                     # at the end of each epoch
                     validation_data=(self.X_val, self.Y_val),
-                    callbacks=[self.early_stop]
+                    callbacks=[self.early_stop, self.tensorboard]
                     )
         self.losses = pd.DataFrame(self.dyn.history.history)
         print('hi')
@@ -325,7 +328,7 @@ class MBRL:
             new_data[i, :self.s_dim] = pre_action_state
             new_data[i, self.s_dim:] = action
         # np.save('data.npy', new_data, allow_pickle=True)
-        self.train(new_data, fit=True)
+        self.train(new_data, fit=True, preprocessVal=True)
         self.storeData = new_data
         # logger.info("bootstrapping finished")
         self.env_cpy.reset()
