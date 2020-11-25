@@ -89,6 +89,7 @@ class MBRL:
             total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, self.train,
                                                                 iter=iter, retrain_after_iter=30, render=False)
             np.save('actions.npy', np.array(actions), allow_pickle=True)
+            self.save_weights(self.dyn, 'trainedWeights128')
         else:
             total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, iter=iter)
             np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
@@ -208,13 +209,13 @@ class MBRL:
         model = tf.keras.Sequential([
             tf.keras.Input(shape=(in_dim, )),
             tf.keras.layers.Dropout(0.2),
-            # tf.keras.layers.Dense(64, activation='relu'),
-            tf.keras.layers.Dense(64, activation='sigmoid'),
+            tf.keras.layers.Dense(128, activation='relu'),
+            tf.keras.layers.Dense(128, activation='sigmoid'),
             tf.keras.layers.Dropout(0.2),
             # tf.keras.layers.Dense(64, activation='relu'),
-            tf.keras.layers.Dense(64, activation='relu'),
+            tf.keras.layers.Dense(128, activation='relu'),
             tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(64, activation='tanh'),
+            tf.keras.layers.Dense(128, activation='tanh'),
             tf.keras.layers.Dense(out_dim),
         ])
 
@@ -404,5 +405,5 @@ if __name__ == '__main__':
     train = True
     # mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, dynamics=None, reward=None)  # to run using env.step()
     mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001)  # to run using dyn and rew
-    mbrl.run_mbrl(train=train, iter=200)
+    mbrl.run_mbrl(train=train, iter=500)
     mbrl.losses[['loss', 'val_loss']].plot()
