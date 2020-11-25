@@ -26,7 +26,7 @@ print('This will work only with Tensorflow 2.x')
 class MBRL:
     # dynamics=None and reward=None uses the env.step() to calculate the next_state and reward
     def __init__(self, dynamics=1, reward=1, env_name='SpaceRobot-v0', lr=0.001, horizon=20,
-                 rollouts=50, epochs=150, bootstrapIter=1000):
+                 rollouts=50, epochs=150, bootstrapIter=100, bootstrap_rollouts=100):
         # self.env = gym.make(env_name)
         self.env = SpaceRobotEnv()
         self.env.reset()
@@ -41,6 +41,10 @@ class MBRL:
         self.lr = lr
         self.early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=25)
 
+        self.scalarX = StandardScaler()  # MinMaxScaler(feature_range=(-1,1))#StandardScaler()# RobustScaler()
+        self.scalarU = MinMaxScaler(feature_range=(-1, 1))
+        self.scalardX = MinMaxScaler(feature_range=(-1, 1))
+
         if dynamics is None:
             self.dynamics = dynamics
         else:
@@ -53,20 +57,19 @@ class MBRL:
         self.horizon = horizon  # T
         self.rollouts = rollouts  # K
         self.epochs = epochs
+        self.bootstrap_rollouts = bootstrap_rollouts
         self.bootstrapIter = bootstrapIter
-        self.val_num = 2000
-        self.storeValData = self.collectValdata(self.val_num)
-
+        self.val_rollout = 100
+        self.val_iter_per_rollout = 50
         self.storeData = None  # np.random.randn(self.bootstrapIter, self.s_dim + self.a_dim)
+        self.storeValData = self.collectValdata(self.val_rollout, self.val_iter_per_rollout)
+
 
         self.dyn = self.dyn_model(21, 14)
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
         # self.dyn.load_weights('save_weights/trained_weights')
         self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()))
-        self.scalarX = StandardScaler()  # MinMaxScaler(feature_range=(-1,1))#StandardScaler()# RobustScaler()
-        self.scalarU = MinMaxScaler(feature_range=(-1, 1))
-        self.scalardX = MinMaxScaler(feature_range=(-1, 1))
 
         self.mppi_gym = mppi_polo.MPPI(self.env, dynamics=self.dynamics, reward=self.reward,
                      H=self.horizon,
@@ -82,7 +85,7 @@ class MBRL:
 
     def run_mbrl(self, iter=200, train=False):
         if train:
-            self.bootstrap(self.bootstrapIter)
+            self.bootstrap(self.bootstrap_rollouts, self.bootstrapIter, storeData=True, train=True)
             total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, self.train,
                                                                 iter=iter, retrain_after_iter=30, render=False)
             np.save('actions.npy', np.array(actions), allow_pickle=True)
@@ -313,25 +316,32 @@ class MBRL:
         # xu = dataset[:-1]  # make same size as Y
         # fwd_dyn_nn.fit(xu, Y, epochs=500)
 
-    def bootstrap(self, bootstrapIter):
+    def bootstrap(self, n_rollouts, n_iter_per_rollout, storeData=False, train=False):
         # logger.info("bootstrapping with random action for %d actions", self.bootstrapIter)
-        new_data = np.zeros((bootstrapIter, self.s_dim + self.a_dim))
+        new_data = np.zeros((n_iter_per_rollout, self.s_dim + self.a_dim))
         # new_data = np.zeros((bootstrapIter, num_arm_states+a_dim))
-        self.env_cpy.reset()
-        for i in range(bootstrapIter):
-            # pre_action_state = self.env.state  # [num_base_states:]
-            pre_action_state = self.env_cpy.state_vector()  # [num_base_states:]
-            # pre_action_state = env_cpy.state_vector()[num_base_states:]
-            action = np.random.uniform(low=self.a_low, high=self.a_high) * 0.6
-            self.env_cpy.step(action)
-            # env_cpy.render()
-            new_data[i, :self.s_dim] = pre_action_state
-            new_data[i, self.s_dim:] = action
+        dataset = list()
+        for k in range(n_rollouts):
+            self.env_cpy.reset()
+            for i in range(n_iter_per_rollout):
+                # pre_action_state = self.env.state  # [num_base_states:]
+                pre_action_state = self.env_cpy.state_vector()  # [num_base_states:]
+                # pre_action_state = env_cpy.state_vector()[num_base_states:]
+                action = np.random.uniform(low=self.a_low, high=self.a_high) * 0.6
+                self.env_cpy.step(action)
+                # env_cpy.render()
+                new_data[i, :self.s_dim] = pre_action_state
+                new_data[i, self.s_dim:] = action
+            dataset.append(new_data)
+        data = np.concatenate(dataset, axis=0)
         # np.save('data.npy', new_data, allow_pickle=True)
-        self.train(new_data, fit=True, preprocessVal=True)
-        self.storeData = new_data
+        if train:
+            self.train(data, fit=True, preprocessVal=True)
+        if storeData:
+            self.storeData = data
         # logger.info("bootstrapping finished")
         self.env_cpy.reset()
+        return data
 
     def loss(self, data):
         """
@@ -344,19 +354,8 @@ class MBRL:
         loss_ = tf.math.reduce_mean(tf.math.square(Ypred - outputs))
         return loss_
 
-    def collectValdata(self, val_num):
-        new_data = np.zeros((val_num, self.s_dim + self.a_dim))
-        self.env_cpy.reset()
-        for i in range(val_num):
-            # pre_action_state = self.env.state  # [num_base_states:]
-            pre_action_state = self.env_cpy.state_vector()  # [num_base_states:]
-            # pre_action_state = env_cpy.state_vector()[num_base_states:]
-            action = self.policy(pre_action_state)
-            # action = np.random.uniform(low=self.a_low, high=self.a_high)
-            self.env_cpy.step(action)
-            new_data[i, :self.s_dim] = pre_action_state
-            new_data[i, self.s_dim:] = action
-        self.env_cpy.reset()
+    def collectValdata(self, val_num, iter):
+        new_data = self.bootstrap(val_num, iter)
         print('Finished collecting validation dataset')
         return new_data
 
