@@ -25,8 +25,8 @@ print('This will work only with Tensorflow 2.x')
 
 class MBRL:
     # dynamics=None and reward=None uses the env.step() to calculate the next_state and reward
-    def __init__(self, dynamics=1, reward=1, env_name='SpaceRobot-v0', lr=0.001, horizon=20,
-                 rollouts=50, epochs=150, bootstrapIter=100, bootstrap_rollouts=100):
+    def __init__(self, dynamics=1, reward=1, env_name='SpaceRobot-v0', lr=0.001, horizon=100,
+                 rollouts=1000, epochs=150, bootstrapIter=100, bootstrap_rollouts=100):
         # self.env = gym.make(env_name)
         self.env = SpaceRobotEnv()
         self.env.reset()
@@ -68,7 +68,7 @@ class MBRL:
         self.dyn = self.dyn_model(21, 14)
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
-        # self.dyn.load_weights('save_weights/trained_weights')
+        self.dyn.load_weights('save_weights/trainedWeights128')
         self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()))
 
         self.mppi_gym = mppi_polo.MPPI(self.env, dynamics=self.dynamics, reward=self.reward,
@@ -89,7 +89,7 @@ class MBRL:
             total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, self.train,
                                                                 iter=iter, retrain_after_iter=30, render=False)
             np.save('actions.npy', np.array(actions), allow_pickle=True)
-            self.save_weights(self.dyn, 'trainedWeights128')
+            self.save_weights(self.dyn, 'trainedWeights128_1')
         else:
             total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, iter=iter)
             np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
