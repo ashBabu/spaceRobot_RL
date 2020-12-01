@@ -8,16 +8,16 @@ import gym
 import multiprocessing as mp
 import numpy as np
 import numpy.matlib as nm
-from tqdm import tqdm
 import time
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, QuantileTransformer
-np.set_printoptions(precision=3, suppress=True)
 import copy
 import tensorflow as tf
-import spacecraftRobot
 import json
 import argparse
 import pickle
+import spacecraftRobot
+from tqdm import tqdm
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, QuantileTransformer
+np.set_printoptions(precision=3, suppress=True)
 
 
 class MPPI:
