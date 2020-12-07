@@ -41,7 +41,7 @@ class MBRL:
         self.a_low, self.a_high = self.env.action_space.low, self.env.action_space.high
         self.lr = lr
         self.early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=25)
-        self.reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.001)
+        self.reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.0001)
 
         if dynamics is None:
             self.dynamics = dynamics
@@ -99,7 +99,7 @@ class MBRL:
     def run_mbrl(self, iter=200, train=False):
         if train:
             total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=self.train,
-                                                                iter=iter, retrain_after_iter=30, render=False)
+                                                                iter=iter, retrain_after_iter=100, render=False)
             # total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=None,
             #                                                     iter=iter, retrain_after_iter=100, render=True)
 
@@ -307,7 +307,7 @@ class MBRL:
                     inputs,
                     outputs,
                     batch_size=100,
-                    epochs=100,
+                    epochs=self.epochs,
                     # We pass some validation for
                     # monitoring validation loss and metrics
                     # at the end of each epoch
@@ -427,8 +427,8 @@ if __name__ == '__main__':
     #             horizon=20,
     #             rollouts=30, epochs=150, bootstrapIter=3, bootstrap_rollouts=3
     #             )  # to run using env.step()
-    mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.1, horizon=500,
-                rollouts=500, epochs=150, bootstrapIter=300, bootstrap_rollouts=300,
+    mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.01, horizon=1000,
+                rollouts=300, epochs=100, bootstrapIter=300, bootstrap_rollouts=500,
                 bootstrap=bootstrap)  # to run using dyn and rew
-    mbrl.run_mbrl(train=train, iter=1000)
+    mbrl.run_mbrl(train=train, iter=800)
     mbrl.losses[['loss', 'val_loss']].plot()
