@@ -41,7 +41,7 @@ class MBRL:
         self.a_low, self.a_high = self.env.action_space.low, self.env.action_space.high
         self.lr = lr
         self.early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=25)
-        self.reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.0001)
+        self.reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.00001)
 
         if dynamics is None:
             self.dynamics = dynamics
@@ -56,13 +56,13 @@ class MBRL:
         self.rollouts = rollouts  # K
         self.epochs = epochs
         self.storeData = None  # np.random.randn(self.bootstrapIter, self.s_dim + self.a_dim)
-        self.val_rollout = 100
-        self.val_iter_per_rollout = 50
+        self.val_rollout = 200
+        self.val_iter_per_rollout = 200
         self.storeValData = self.collectValdata(self.val_rollout, self.val_iter_per_rollout)
         self.dyn = self.dyn_model(21, 14)
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
-        self.dyn.load_weights('save_weights/trainedWeights128_2')
+        self.dyn.load_weights('save_weights/trainedWeights256_2')
         self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()))
 
         scalarX = Path("save_scalars/scalarX.gz")
@@ -73,6 +73,7 @@ class MBRL:
             self.scalarU = joblib.load('save_scalars/scalarU.gz')
             self.scalardX = joblib.load('save_scalars/scalardX.gz')
             self.fit = False
+            self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
         else:
             self.scalarX = StandardScaler()  # MinMaxScaler(feature_range=(-1,1))#StandardScaler()# RobustScaler()
             self.scalarU = MinMaxScaler(feature_range=(-1, 1))
@@ -103,8 +104,8 @@ class MBRL:
             # total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=None,
             #                                                     iter=iter, retrain_after_iter=100, render=True)
 
-            np.save('actions.npy', np.array(actions), allow_pickle=True)
-            self.save_weights(self.dyn, 'trainedWeights128_3')
+            np.save('actions_800_2.npy', np.array(actions), allow_pickle=True)
+            self.save_weights(self.dyn, 'trainedWeights256_3')
         else:
             total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, iter=iter)
             np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
@@ -226,13 +227,13 @@ class MBRL:
         model = tf.keras.Sequential([
             tf.keras.Input(shape=(in_dim, )),
             tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(128, activation='relu'),
-            tf.keras.layers.Dense(128, activation='relu'),
+            tf.keras.layers.Dense(256, activation='relu'),
             tf.keras.layers.Dropout(0.2),
-            # tf.keras.layers.Dense(64, activation='relu'),
-            tf.keras.layers.Dense(128, activation='relu'),
+            tf.keras.layers.Dense(256, activation='relu'),
             tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(128, activation='relu'),
+            tf.keras.layers.Dense(256, activation='relu'),
+            tf.keras.layers.Dropout(0.2),
+            tf.keras.layers.Dense(256, activation='relu'),
             tf.keras.layers.Dense(out_dim),
         ])
 
@@ -306,7 +307,7 @@ class MBRL:
         self.dyn.fit(
                     inputs,
                     outputs,
-                    batch_size=100,
+                    batch_size=400,
                     epochs=self.epochs,
                     # We pass some validation for
                     # monitoring validation loss and metrics
@@ -422,13 +423,13 @@ class MBRL:
 if __name__ == '__main__':
 
     train = True
-    bootstrap = True
+    bootstrap = False
     # mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, dynamics=None, reward=None,
     #             horizon=20,
     #             rollouts=30, epochs=150, bootstrapIter=3, bootstrap_rollouts=3
     #             )  # to run using env.step()
-    mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.01, horizon=1000,
-                rollouts=300, epochs=100, bootstrapIter=300, bootstrap_rollouts=500,
+    mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=500,
+                rollouts=200, epochs=100, bootstrapIter=300, bootstrap_rollouts=500,
                 bootstrap=bootstrap)  # to run using dyn and rew
     mbrl.run_mbrl(train=train, iter=800)
     mbrl.losses[['loss', 'val_loss']].plot()

@@ -44,6 +44,7 @@ class MPPI:
         else:
             self.reward_fn = reward
         self.nx, self.nu = env.observation_space.shape[0], env.action_dim
+        self.a_low, self.a_high = self.env.action_space.low, self.env.action_space.high
         self.H, self.paths_per_cpu, self.num_cpu = H, paths_per_cpu, num_cpu
         self.warmstart = warmstart
 
@@ -366,6 +367,7 @@ def run_mppi(mppi, env, retrain_dynamics=None, retrain_after_iter=50, iter=200, 
         mppi.control(state)
         action = mppi.act_sequence[0]
         # print('next_state_dyn_model:', mppi.fwd_dyn(s0, action))
+        action = np.clip(action, mppi.a_low, mppi.a_high)
         actions.append(action)
         print('action:', action)
         # action = torch.zeros(7)
