@@ -9,16 +9,15 @@ import tensorflow as tf
 import tensorflow.keras.optimizers as opt
 import copy
 import time
-import mppi_polo
+import mppi_polo_vecAsh
 import pandas as pd
 import joblib
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, QuantileTransformer
 from spacerobot_env import SpaceRobotEnv
 from tensorflow.keras.callbacks import EarlyStopping, TensorBoard, ReduceLROnPlateau
 from pathlib import Path
-# from ddpg_agent.looptools import Loop_handler, Monitor
-# import spacecraftRobot
-# import gym
+import cProfile, pstats
+import types
 np.set_printoptions(precision=3, suppress=True)
 
 print('This will work only with Tensorflow 2.x')
@@ -47,10 +46,12 @@ class MBRL:
             self.dynamics = dynamics
         else:
             self.dynamics = self.dynamics_batch
+            # self.dynamics = types.MethodType(dynamics_batch, self)
         if reward is None:
             self.reward = reward
         else:
             self.reward = self.reward_batch
+            # self.reward = types.MethodType(reward_batch, self)
 
         self.horizon = horizon  # T
         self.rollouts = rollouts  # K
@@ -62,7 +63,7 @@ class MBRL:
         self.dyn = self.dyn_model(21, 14)
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
-        self.dyn.load_weights('save_weights/trainedWeights256_2')
+        # self.dyn.load_weights('save_weights/trainedWeights256_2')
         self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()))
 
         scalarX = Path("save_scalars/scalarX.gz")
@@ -79,15 +80,16 @@ class MBRL:
             self.scalarU = MinMaxScaler(feature_range=(-1, 1))
             self.scalardX = MinMaxScaler(feature_range=(-1, 1))
             self.fit = True
+            self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
 
         if bootstrap:
             self.bootstrap_rollouts = bootstrap_rollouts
             self.bootstrapIter = bootstrapIter
             self.bootstrap(self.bootstrap_rollouts, self.bootstrapIter, storeData=True, train=True)
 
-        self.mppi_gym = mppi_polo.MPPI(self.env, dynamics=self.dynamics, reward=self.reward,
+        self.mppi_gym = mppi_polo_vecAsh.MPPI(self.env, dynamics=self.dynamics, reward=self.reward,
                                        H=self.horizon,
-                                       paths_per_cpu=self.rollouts,
+                                       rollouts=self.rollouts,
                                        num_cpu=1,
                                        kappa=5,
                                        gamma=1,
@@ -99,8 +101,8 @@ class MBRL:
 
     def run_mbrl(self, iter=200, train=False):
         if train:
-            total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=self.train,
-                                                                iter=iter, retrain_after_iter=100, render=False)
+            total_reward, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, retrain_dynamics=self.train,
+                                                                iter=iter, retrain_after_iter=40, render=False)
             # total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=None,
             #                                                     iter=iter, retrain_after_iter=100, render=True)
 
@@ -118,13 +120,11 @@ class MBRL:
             ss = x0.shape[0]
         reward = np.zeros(ss)
         s0 = x0.copy()
-        state = dict()
-        state['qp'], state['qv'], state['timestep'] = np.zeros(14), np.zeros(13), 0
         if ss:
             for i in range(ss):
                 # self.env_cpy.reset()
-                state['qp'], state['qv'] = s0[i, :14], s0[i, 14:]
-                self.env_cpy.set_env_state(state)
+                qp, qv = s0[i, :14], s0[i, 14:]
+                self.env_cpy.set_env_state(qp, qv)
                 endEff_loc = self.env_cpy.data.get_site_xpos('end_effector')
                 # base_linVel = self.env_cpy.data.get_site_xvelp('baseSite')
                 # base_angVel = self.env_cpy.data.get_site_xvelr('baseSite')
@@ -132,8 +132,8 @@ class MBRL:
                 # rw_vel = np.dot(base_angVel, base_angVel) + np.dot(base_linVel, base_linVel)
                 reward[i] = -np.linalg.norm((self.target_loc - endEff_loc)) - lam_a * np.dot(act[i], act[i]) #- lam_a * rw_vel
         else:
-            state['qp'], state['qv'] = s0[:14], s0[14:]
-            self.env_cpy.set_env_state(state)
+            qp, qv = s0[:14], s0[14:]
+            self.env_cpy.set_env_state(qp, qv)
             endEff_loc = self.env_cpy.data.get_site_xpos('end_effector')
             base_linVel = self.env_cpy.data.get_site_xvelp('baseSite')
             base_angVel = self.env_cpy.data.get_site_xvelr('baseSite')
@@ -177,8 +177,6 @@ class MBRL:
         dt = 1
         u = np.clip(perturbed_action, self.a_low, self.a_high)
         ss = u.shape[0]
-        state1 = dict()
-        state1['qp'], state1['qv'], state1['timestep'] = np.zeros(14), np.zeros(13), 0
         next_state = np.zeros_like(state)
         # if state.ndim == 1:
         #     s1 = np.hstack((state[7:14], state[20:27]))
@@ -189,8 +187,8 @@ class MBRL:
         # else:
         self.env_cpy.reset()
         for i in range(ss):
-            state1['qp'], state1['qv'] = state[i, :14], state[i, 14:]
-            self.env_cpy.set_env_state(state1)
+            qp, qv = state[i, :14], state[i, 14:]
+            self.env_cpy.set_env_state(qp, qv)
             next_state[i], _, _, _ = self.env_cpy.step(u[i])
             self.env_cpy.reset()
         return next_state
@@ -299,8 +297,6 @@ class MBRL:
         else:
             Data = dataset
         inputs, outputs = self.preprocess(Data, fit=fit)
-        if preprocessVal:
-            self.X_val, self.Y_val = self.preprocess(self.storeValData)
         if model == 'LSTM':
             inputs = inputs.reshape(*inputs.shape, 1)
             outputs = outputs.reshape(*outputs.shape, 1)
@@ -423,13 +419,28 @@ class MBRL:
 if __name__ == '__main__':
 
     train = True
-    bootstrap = False
+    bootstrap = True
     # mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, dynamics=None, reward=None,
     #             horizon=20,
     #             rollouts=30, epochs=150, bootstrapIter=3, bootstrap_rollouts=3
     #             )  # to run using env.step()
-    mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=500,
-                rollouts=200, epochs=100, bootstrapIter=300, bootstrap_rollouts=500,
+    mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=5,
+                rollouts=20, epochs=10, bootstrapIter=30, bootstrap_rollouts=50,
                 bootstrap=bootstrap)  # to run using dyn and rew
-    mbrl.run_mbrl(train=train, iter=800)
-    mbrl.losses[['loss', 'val_loss']].plot()
+    start = time.time()
+    # statement = "mbrl.run_mbrl(train=train, iter=50)"
+    # cProfile.run(statement, filename="cpro.txt", sort=-1)
+    profiler = cProfile.Profile()
+    profiler.enable()
+    mbrl.run_mbrl(train=train, iter=80)
+    profiler.disable()
+    print(time.time() - start)
+    stats = pstats.Stats(profiler).sort_stats('cumtime')
+    # stats = pstats.Stats(profiler).sort_stats('tottime')
+    stats.strip_dirs()
+    # stats.print_stats()
+    # stats.dump_stats('cpro_cython.prof')
+    # stats.dump_stats('cpro_python.prof')
+    # import snakeviz
+    # snakeviz "cpro.prof"
+    # mbrl.losses[['loss', 'val_loss']].plot()
