@@ -160,13 +160,13 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
                     qa=self.data.qacc.copy(),
                     target_pos=target_pos, timestep=self.env_timestep)
 
-    def set_env_state(self, state_dict):
+    def set_env_state(self, qp, qv):
         self.sim.reset()
-        qp = state_dict['qp'].copy()
-        qv = state_dict['qv'].copy()
+        # qp = state_dict['qp'].copy()
+        # qv = state_dict['qv'].copy()
         # qa = state_dict['qa'].copy()
         # target_pos = state_dict['target_pos']
-        self.env_timestep = state_dict['timestep']
+        # self.env_timestep = state_dict['timestep']
         # self.model.site_pos[self.target_sid] = target_pos
         # self.data.site_xpos[self.target_sid] = target_pos
         # self.sim.forward()
