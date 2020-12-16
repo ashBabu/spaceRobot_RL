@@ -40,7 +40,7 @@ class MBRL:
         self.s_dim = self.env.observation_space.shape[0]
         self.a_low, self.a_high = self.env.action_space.low, self.env.action_space.high
         self.lr = lr
-        self.early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=25)
+        self.early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=15)
         self.reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.00001)
 
         if dynamics is None:
@@ -58,14 +58,14 @@ class MBRL:
         self.rollouts = rollouts  # K
         self.epochs = epochs
         self.storeData = None  # np.random.randn(self.bootstrapIter, self.s_dim + self.a_dim)
-        self.val_rollout = 200
-        self.val_iter_per_rollout = 200
-        self.storeValData = self.collectValdata(self.val_rollout, self.val_iter_per_rollout)
         self.dyn = self.dyn_model(21, 14)
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
         # self.dyn.load_weights('save_weights/trainedWeights256_2')
         self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()))
+        self.val_rollout = 200
+        self.val_iter_per_rollout = 500
+        self.storeValData = self.collectValdata(self.val_rollout, self.val_iter_per_rollout)
 
         scalarX = Path("save_scalars/scalarX.gz")
         # scalarU = Path("save_scalars/scalarU.gz")
@@ -74,19 +74,19 @@ class MBRL:
             self.scalarX = joblib.load('save_scalars/scalarX.gz')
             self.scalarU = joblib.load('save_scalars/scalarU.gz')
             self.scalardX = joblib.load('save_scalars/scalardX.gz')
-            self.fit = False
-            self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
+            # self.fit = False
         else:
-            self.scalarX = StandardScaler()  # MinMaxScaler(feature_range=(-1,1))#StandardScaler()# RobustScaler()
+            self.scalarX = MinMaxScaler(feature_range=(-1, 1))  # StandardScaler()  RobustScaler()
             self.scalarU = MinMaxScaler(feature_range=(-1, 1))
             self.scalardX = MinMaxScaler(feature_range=(-1, 1))
-            self.fit = True
-            self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
+            # self.fit = True
+            # self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
 
         if bootstrap:
             self.bootstrap_rollouts = bootstrap_rollouts
             self.bootstrapIter = bootstrapIter
             self.bootstrap(self.bootstrap_rollouts, self.bootstrapIter, storeData=True, train=True)
+            print('Finished bootsrapping and training the bootsrapped dataset')
 
         self.mppi_gym = mppi_polo_vecAsh.MPPI(self.env, dynamics=self.dynamics, reward=self.reward,
                                        H=self.horizon,
@@ -103,12 +103,12 @@ class MBRL:
     def run_mbrl(self, iter=200, train=False):
         if train:
             total_reward, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, retrain_dynamics=self.train,
-                                                                iter=iter, retrain_after_iter=40, render=False)
+                                                                iter=iter, retrain_after_iter=300, render=False)
             # total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=None,
             #                                                     iter=iter, retrain_after_iter=100, render=True)
 
             np.save('actions_800_2.npy', np.array(actions), allow_pickle=True)
-            self.save_weights(self.dyn, 'trainedWeights256_3')
+            self.save_weights(self.dyn, 'trainedWeights500_1')
         else:
             total_reward, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, iter=iter)
             np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
@@ -197,8 +197,8 @@ class MBRL:
         return next_state
 
     def preprocess(self, data, fit=False):
-        X = np.hstack((data[:, 7:14], data[:, 20:27]))
-        U = data[:, 27:]
+        X = np.hstack((data[1:, 7:14], data[1:, 20:27]))
+        U = data[1:, 27:]
         dX = np.diff(X, axis=0)  # state residual. makes the dimension less by one
 
         if fit:
@@ -300,6 +300,8 @@ class MBRL:
         else:
             Data = dataset
         inputs, outputs = self.preprocess(Data, fit=fit)
+        if preprocessVal:
+            self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=False)
         if model == 'LSTM':
             inputs = inputs.reshape(*inputs.shape, 1)
             outputs = outputs.reshape(*outputs.shape, 1)
@@ -356,7 +358,7 @@ class MBRL:
         data = np.concatenate(dataset, axis=0)
         # np.save('data.npy', new_data, allow_pickle=True)
         if train:
-            self.train(data, fit=self.fit, preprocessVal=True)
+            self.train(data, fit=True, preprocessVal=True)
         if storeData:
             self.storeData = data
         # logger.info("bootstrapping finished")

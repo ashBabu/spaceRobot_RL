@@ -34,6 +34,7 @@ class MPPI:
         else:
             self.reward_fn = reward
         self.nx, self.nu = env.observation_space.shape[0], env.action_dim
+        self.a_low, self.a_high = self.env.action_space.low, self.env.action_space.high
         self.H, self.rollouts, self.num_cpu = H, rollouts, num_cpu
         self.warmstart = warmstart
         # self.do_env_rollout = types.MethodType(do_env_rollout, self)
@@ -171,6 +172,7 @@ def run_mppi(mppi, env, retrain_dynamics=None, retrain_after_iter=50, iter=200, 
         state = env.state_vector()
         command_start = time.perf_counter()
         action = mppi.control(state)
+        action = np.clip(action, mppi.a_low, mppi.a_high)
         actions.append(action)
         print('action:', action)
         # elapsed = time.perf_counter() - command_start
