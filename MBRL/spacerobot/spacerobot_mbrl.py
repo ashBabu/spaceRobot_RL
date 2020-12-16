@@ -18,11 +18,12 @@ from tensorflow.keras.callbacks import EarlyStopping, TensorBoard, ReduceLROnPla
 from pathlib import Path
 import cProfile, pstats
 import types
+from numba import jit
+from numba.experimental import jitclass
 np.set_printoptions(precision=3, suppress=True)
-
 print('This will work only with Tensorflow 2.x')
 
-
+# @jitclass
 class MBRL:
     # dynamics=None and reward=None uses the env.step() to calculate the next_state and reward
     def __init__(self, dynamics=1, reward=1, env_name='SpaceRobot-v0', lr=0.001, horizon=500,
@@ -109,9 +110,10 @@ class MBRL:
             np.save('actions_800_2.npy', np.array(actions), allow_pickle=True)
             self.save_weights(self.dyn, 'trainedWeights256_3')
         else:
-            total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, iter=iter)
+            total_reward, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, iter=iter)
             np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
 
+    # @jit(nopython=True)
     def reward_batch(self, x0, act):
         lam_a, lam_b = 0.001, 0
         if x0.ndim == 1:
@@ -142,6 +144,7 @@ class MBRL:
             reward = -np.linalg.norm((self.target_loc - endEff_loc)) - lam_a * np.dot(act, act) - lam_a * rw_vel
         return reward
 
+    # @jit(nopython=True)
     def dynamics_batch(self, state, perturbed_action):
         dt = 1
         u = np.clip(perturbed_action, self.a_low, self.a_high)
@@ -224,14 +227,14 @@ class MBRL:
         optimizer = tf.keras.optimizers.Adam(lr_schedule)
         model = tf.keras.Sequential([
             tf.keras.Input(shape=(in_dim, )),
-            tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(256, activation='relu'),
-            tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(256, activation='relu'),
-            tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(256, activation='relu'),
-            tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(256, activation='relu'),
+            # tf.keras.layers.Dropout(0.2),
+            tf.keras.layers.Dense(512, activation='relu'),
+            # tf.keras.layers.Dropout(0.2),
+            tf.keras.layers.Dense(512, activation='relu'),
+            # tf.keras.layers.Dropout(0.2),
+            # tf.keras.layers.Dense(256, activation='relu'),
+            # tf.keras.layers.Dropout(0.2),
+            # tf.keras.layers.Dense(256, activation='relu'),
             tf.keras.layers.Dense(out_dim),
         ])
 
@@ -420,21 +423,25 @@ if __name__ == '__main__':
 
     train = True
     bootstrap = True
-    # mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, dynamics=None, reward=None,
-    #             horizon=20,
-    #             rollouts=30, epochs=150, bootstrapIter=3, bootstrap_rollouts=3
-    #             )  # to run using env.step()
-    mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=5,
-                rollouts=20, epochs=10, bootstrapIter=30, bootstrap_rollouts=50,
-                bootstrap=bootstrap)  # to run using dyn and rew
-    start = time.time()
+    dyn = 0
+    if dyn:
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, dynamics=None, reward=None,
+                    horizon=20,
+                    rollouts=30, epochs=150, bootstrapIter=3, bootstrap_rollouts=3
+                    )  # to run using env.step()
+    else:
+
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=500,
+                    rollouts=400, epochs=100, bootstrapIter=300, bootstrap_rollouts=500,
+                    bootstrap=bootstrap)  # to run using dyn and rew
     # statement = "mbrl.run_mbrl(train=train, iter=50)"
     # cProfile.run(statement, filename="cpro.txt", sort=-1)
     profiler = cProfile.Profile()
     profiler.enable()
-    mbrl.run_mbrl(train=train, iter=80)
+    start = time.time()
+    mbrl.run_mbrl(train=train, iter=800)
+    # print(time.time() - start)
     profiler.disable()
-    print(time.time() - start)
     stats = pstats.Stats(profiler).sort_stats('cumtime')
     # stats = pstats.Stats(profiler).sort_stats('tottime')
     stats.strip_dirs()
