@@ -46,6 +46,7 @@ class MBRL:
         if dynamics is None:
             self.dynamics = dynamics
         else:
+            # self.dynamics = self.dynamics_true
             self.dynamics = self.dynamics_batch
             # self.dynamics = types.MethodType(dynamics_batch, self)
         if reward is None:
@@ -61,9 +62,9 @@ class MBRL:
         self.dyn = self.dyn_model(21, 14)
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
-        # self.dyn.load_weights('save_weights/trainedWeights256_2')
+        self.dyn.load_weights('save_weights/trainedWeights500_1')
         self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()))
-        self.val_rollout = 200
+        self.val_rollout = 50
         self.val_iter_per_rollout = 500
         self.storeValData = self.collectValdata(self.val_rollout, self.val_iter_per_rollout)
 
@@ -100,10 +101,10 @@ class MBRL:
                                        seed=2145
                                        )
 
-    def run_mbrl(self, iter=200, train=False):
+    def run_mbrl(self, iter=200, train=False, render=False, retrain_after_iter=50):
         if train:
             total_reward, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, retrain_dynamics=self.train,
-                                                                iter=iter, retrain_after_iter=300, render=False)
+                                                                iter=iter, retrain_after_iter=retrain_after_iter, render=render)
             # total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=None,
             #                                                     iter=iter, retrain_after_iter=100, render=True)
 
@@ -193,7 +194,7 @@ class MBRL:
             qp, qv = state[i, :14], state[i, 14:]
             self.env_cpy.set_env_state(qp, qv)
             next_state[i], _, _, _ = self.env_cpy.step(u[i])
-            self.env_cpy.reset()
+            # self.env_cpy.reset()
         return next_state
 
     def preprocess(self, data, fit=False):
@@ -423,9 +424,15 @@ class MBRL:
 
 if __name__ == '__main__':
 
-    train = True
-    bootstrap = True
     dyn = 0
+    render = False
+    retrain_after_iter = 50
+    if dyn:
+        bootstrap = 0
+        train = 0
+    else:
+        bootstrap = 1
+        train = 1
     if dyn:
         mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, dynamics=None, reward=None,
                     horizon=20,
@@ -433,15 +440,15 @@ if __name__ == '__main__':
                     )  # to run using env.step()
     else:
 
-        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=500,
-                    rollouts=400, epochs=100, bootstrapIter=300, bootstrap_rollouts=500,
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=200,
+                    rollouts=30, epochs=50, bootstrapIter=100, bootstrap_rollouts=200,
                     bootstrap=bootstrap)  # to run using dyn and rew
     # statement = "mbrl.run_mbrl(train=train, iter=50)"
     # cProfile.run(statement, filename="cpro.txt", sort=-1)
     profiler = cProfile.Profile()
     profiler.enable()
     start = time.time()
-    mbrl.run_mbrl(train=train, iter=800)
+    mbrl.run_mbrl(train=train, iter=800, render=render, retrain_after_iter=retrain_after_iter)
     # print(time.time() - start)
     profiler.disable()
     stats = pstats.Stats(profiler).sort_stats('cumtime')
