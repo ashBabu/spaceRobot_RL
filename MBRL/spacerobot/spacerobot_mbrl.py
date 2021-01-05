@@ -75,31 +75,31 @@ class MBRL:
             self.scalarX = joblib.load('save_scalars/scalarX.gz')
             self.scalarU = joblib.load('save_scalars/scalarU.gz')
             self.scalardX = joblib.load('save_scalars/scalardX.gz')
-            # self.fit = False
+            self.fit = False
         else:
             self.scalarX = MinMaxScaler(feature_range=(-1, 1))  # StandardScaler()  RobustScaler()
             self.scalarU = MinMaxScaler(feature_range=(-1, 1))
             self.scalardX = MinMaxScaler(feature_range=(-1, 1))
-            # self.fit = True
-            # self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
+            self.fit = True
 
         if bootstrap:
             self.bootstrap_rollouts = bootstrap_rollouts
             self.bootstrapIter = bootstrapIter
             self.bootstrap(self.bootstrap_rollouts, self.bootstrapIter, storeData=True, train=True)
             print('Finished bootsrapping and training the bootsrapped dataset')
+        self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
 
         self.mppi_gym = mppi_polo_vecAsh.MPPI(self.env, dynamics=self.dynamics, reward=self.reward,
-                                       H=self.horizon,
-                                       rollouts=self.rollouts,
-                                       num_cpu=1,
-                                       kappa=5,
-                                       gamma=1,
-                                       mean=np.zeros(self.env.action_space.shape[0]),
-                                       filter_coefs=[np.ones(self.env.action_space.shape[0]), 0.25, 0.8, 0.0],
-                                       default_act='mean',
-                                       seed=2145
-                                       )
+                                              H=self.horizon,
+                                              rollouts=self.rollouts,
+                                              num_cpu=1,
+                                              kappa=5,
+                                              gamma=1,
+                                              mean=np.zeros(self.env.action_space.shape[0]),
+                                              filter_coefs=[np.ones(self.env.action_space.shape[0]), 0.25, 0.8, 0.0],
+                                              default_act='mean',
+                                              seed=2145
+                                              )
 
     def run_mbrl(self, iter=200, train=False, render=False, retrain_after_iter=50):
         if train:
@@ -108,7 +108,7 @@ class MBRL:
             # total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=None,
             #                                                     iter=iter, retrain_after_iter=100, render=True)
 
-            np.save('actions_800_2.npy', np.array(actions), allow_pickle=True)
+            np.save('actions_800_22.npy', np.array(actions), allow_pickle=True)
             self.save_weights(self.dyn, 'trainedWeights500_1')
         else:
             total_reward, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, iter=iter)
@@ -315,7 +315,8 @@ class MBRL:
                     # monitoring validation loss and metrics
                     # at the end of each epoch
                     validation_data=(self.X_val, self.Y_val),
-                    callbacks=[self.early_stop, self.tensorboard, self.reduce_lr]
+                    callbacks=[self.early_stop, self.tensorboard],
+                    # callbacks=[self.early_stop, self.tensorboard, self.reduce_lr],
                     )
         self.losses = pd.DataFrame(self.dyn.history.history)
         print('hi')
@@ -359,7 +360,7 @@ class MBRL:
         data = np.concatenate(dataset, axis=0)
         # np.save('data.npy', new_data, allow_pickle=True)
         if train:
-            self.train(data, fit=True, preprocessVal=True)
+            self.train(data, fit=self.fit, preprocessVal=True)
         if storeData:
             self.storeData = data
         # logger.info("bootstrapping finished")
@@ -431,7 +432,7 @@ if __name__ == '__main__':
         bootstrap = 0
         train = 0
     else:
-        bootstrap = 1
+        bootstrap = 0
         train = 1
     if dyn:
         mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, dynamics=None, reward=None,
@@ -440,8 +441,8 @@ if __name__ == '__main__':
                     )  # to run using env.step()
     else:
 
-        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=200,
-                    rollouts=30, epochs=50, bootstrapIter=100, bootstrap_rollouts=200,
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=500,
+                    rollouts=100, epochs=100, bootstrapIter=100, bootstrap_rollouts=800,
                     bootstrap=bootstrap)  # to run using dyn and rew
     # statement = "mbrl.run_mbrl(train=train, iter=50)"
     # cProfile.run(statement, filename="cpro.txt", sort=-1)
