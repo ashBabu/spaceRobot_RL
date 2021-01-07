@@ -130,7 +130,8 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         base_angVel = self.data.get_site_xvelr('baseSite')
         act, base_linVel, base_angVel = np.squeeze(act), np.squeeze(base_linVel), np.squeeze(base_angVel)
         rw_vel = np.dot(base_angVel, base_angVel) + np.dot(base_linVel, base_linVel)
-        reward = -np.linalg.norm((target_loc - endEff_loc)) - lam_a * np.dot(act, act) - lam_a * rw_vel
+        reward = -np.linalg.norm((target_loc - endEff_loc))
+        # reward = -np.linalg.norm((target_loc - endEff_loc)) - lam_a * np.dot(act, act) - lam_a * rw_vel
         return reward
 
     def done(self, reward):
