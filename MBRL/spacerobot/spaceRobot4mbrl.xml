@@ -70,8 +70,8 @@
             <site name="baseSite" pos="0 0 0" type="sphere" size="0.01" rgba="0.1 0.2 0.3 1" />
 <!--            <inertial mass="50000" pos="0 0 0" diaginertia="14000 14000 10400"/>-->
             <inertial mass="500" pos="0 0 0" diaginertia="1400 1400 1040"/>
-<!--            <joint name="BasefloatingJoint" type="free" damping="0"/>-->
-            <joint name="BasefloatingJoint" type="free" damping="1e+11"/>
+            <joint name="BasefloatingJoint" type="free" damping="0"/>
+<!--            <joint name="BasefloatingJoint" type="free" damping="1e+11"/>-->
             <geom size="1.05 1.05 1.05" type="box" rgba="1 1 0.6 1" />
             <body name="spacecraft_link1" pos="1.2268 1.2268 0" quat="0.653281 -0.653281 0.270598 -0.270598">
                 <inertial pos="0 0 0" mass="20" diaginertia="0.1 0.1 0.1" />

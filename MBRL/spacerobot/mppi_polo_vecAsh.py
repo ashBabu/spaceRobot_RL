@@ -52,7 +52,7 @@ class MPPI:
         self.sol_obs = []
 
         self.env.reset()
-        self.sol_state.append(self.env.get_env_state().copy())
+        # self.sol_state.append(self.env.get_env_state().copy())
         self.act_sequence = np.ones((self.H, self.nu)) * self.mean
         self.init_act_sequence = self.act_sequence.copy()
 
@@ -70,7 +70,7 @@ class MPPI:
         # accept first action and step
         action = act_sequence[0].copy()
         self.sol_act.append(action)
-        self.sol_state.append(self.env.get_env_state().copy())
+        # self.sol_state.append(self.env.get_env_state().copy())
         self.sol_reward.append(rew)
 
         # get updated action sequence

@@ -63,7 +63,8 @@ class MBRL:
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
         # self.dyn.load_weights('save_weights/trainedWeights500_1')
-        self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()))
+        self.dyn.load_weights('save_weights/trainedWeights500_float_base1')
+        self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time())+'float_base')
         self.val_rollout = 50
         self.val_iter_per_rollout = 500
         self.storeValData = self.collectValdata(self.val_rollout, self.val_iter_per_rollout)
@@ -77,9 +78,9 @@ class MBRL:
             self.scalardX = joblib.load('save_scalars/scalardX_float_base.gz')
             self.fit = False
         else:
-            self.scalarX = MinMaxScaler(feature_range=(-1, 1))  # StandardScaler()  RobustScaler()
-            self.scalarU = MinMaxScaler(feature_range=(-1, 1))
-            self.scalardX = MinMaxScaler(feature_range=(-1, 1))
+            self.scalarX = StandardScaler()  # StandardScaler()  RobustScaler(), MinMaxScaler(feature_range=(-1, 1))
+            self.scalarU = StandardScaler()
+            self.scalardX = StandardScaler()
             self.fit = True
 
         if bootstrap:
@@ -108,8 +109,8 @@ class MBRL:
             # total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=None,
             #                                                     iter=iter, retrain_after_iter=100, render=True)
 
-            np.save('actions_800_22_float_base.npy', np.array(actions), allow_pickle=True)
-            self.save_weights(self.dyn, 'trainedWeights500_float_base')
+            np.save('actions_800_22_float_base1.npy', np.array(actions), allow_pickle=True)
+            self.save_weights(self.dyn, 'trainedWeights500_float_base1')
         else:
             total_reward, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, iter=iter)
             np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
@@ -202,18 +203,24 @@ class MBRL:
 
     def dyn_model(self, in_dim, out_dim):
         ##############################################################
+        """
+        Layer Initializers
+        https://keras.io/api/layers/initializers/
+        Xavier or Glorot initializer solves vanishing gradient problem
+        """
         lr_schedule = tf.keras.optimizers.schedules.InverseTimeDecay(
             0.001,
             decay_steps=5 * 1000,
             decay_rate=1,
             staircase=False)
         optimizer = tf.keras.optimizers.Adam(lr_schedule)
+        initializer = tf.keras.initializers.GlorotNormal(seed=None)
         model = tf.keras.Sequential([
             tf.keras.Input(shape=(in_dim, )),
             # tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(512, activation='relu'),
+            tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
             # tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(512, activation='relu'),
+            tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
             # tf.keras.layers.Dropout(0.2),
             # tf.keras.layers.Dense(256, activation='relu'),
             # tf.keras.layers.Dropout(0.2),
@@ -278,8 +285,9 @@ class MBRL:
         # xu = xu[:-1]  # make same size as Y
         if self.storeData is not None:
             n = self.storeData.shape[0]
-            newData = self.storeData[np.random.choice(n, n//3, replace=False), :]
-            Data = np.vstack((newData, dataset))
+            newData = self.storeData[np.random.choice(n, n//8, replace=False), :]
+            # Data = np.vstack((newData, dataset))
+            Data = dataset
         else:
             Data = dataset
         inputs, outputs = self.preprocess(Data, fit=fit)
@@ -329,11 +337,13 @@ class MBRL:
         dataset = list()
         for k in range(n_rollouts):
             self.env_cpy.reset()
+            # qp, qv = self.env_cpy.get_env_state()
+            # self.env_cpy.set_env_state(qp, qv)
             for i in range(n_iter_per_rollout):
                 # pre_action_state = self.env.state  # [num_base_states:]
                 pre_action_state = self.env_cpy.state_vector()  # [num_base_states:]
                 # pre_action_state = env_cpy.state_vector()[num_base_states:]
-                action = np.random.uniform(low=self.a_low, high=self.a_high) * 0.6
+                action = np.random.uniform(low=self.a_low, high=self.a_high) + np.random.normal(loc=0, scale=0.01, size=7)
                 self.env_cpy.step(action)
                 # env_cpy.render()
                 new_data[i, :self.s_dim] = pre_action_state
@@ -423,8 +433,8 @@ if __name__ == '__main__':
                     )  # to run using env.step()
     else:
 
-        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=50,
-                    rollouts=100, epochs=50, bootstrapIter=100, bootstrap_rollouts=800,
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=200,
+                    rollouts=100, epochs=150, bootstrapIter=100, bootstrap_rollouts=300,
                     bootstrap=bootstrap)  # to run using dyn and rew
     # statement = "mbrl.run_mbrl(train=train, iter=50)"
     # cProfile.run(statement, filename="cpro.txt", sort=-1)
