@@ -62,8 +62,8 @@ class MBRL:
         self.dyn = self.dyn_model(21, 14)
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
-        self.dyn.load_weights('save_weights/trainedWeights500_1')
-        self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()))
+        # self.dyn.load_weights('save_weights/trainedWeights500_1')
+        # self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()))
         self.val_rollout = 50
         self.val_iter_per_rollout = 500
         self.storeValData = self.collectValdata(self.val_rollout, self.val_iter_per_rollout)
@@ -108,8 +108,8 @@ class MBRL:
             # total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=None,
             #                                                     iter=iter, retrain_after_iter=100, render=True)
 
-            np.save('actions_800_22.npy', np.array(actions), allow_pickle=True)
-            self.save_weights(self.dyn, 'trainedWeights500_1')
+            np.save('actions_cem.npy', np.array(actions), allow_pickle=True)
+            self.save_weights(self.dyn, 'trainedWeights500_cem')
         else:
             total_reward, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, iter=iter)
             np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
@@ -226,12 +226,13 @@ class MBRL:
             decay_rate=1,
             staircase=False)
         optimizer = tf.keras.optimizers.Adam(lr_schedule)
+        initializer = tf.keras.initializers.GlorotNormal(seed=None)
         model = tf.keras.Sequential([
             tf.keras.Input(shape=(in_dim, )),
             # tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(512, activation='relu'),
+            tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
             # tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(512, activation='relu'),
+            tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
             # tf.keras.layers.Dropout(0.2),
             # tf.keras.layers.Dense(256, activation='relu'),
             # tf.keras.layers.Dropout(0.2),
@@ -294,6 +295,7 @@ class MBRL:
         # dtheta_dt_manip = manip_joint_vel[1:, :] - manip_joint_vel[:-1, :]
         # Y = np.hstack((dtheta_manip, dtheta_dt_manip))  # x' - x residual
         # xu = xu[:-1]  # make same size as Y
+        tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()))
         if self.storeData is not None:
             n = self.storeData.shape[0]
             newData = self.storeData[np.random.choice(n, n//3, replace=False), :]
@@ -315,7 +317,7 @@ class MBRL:
                     # monitoring validation loss and metrics
                     # at the end of each epoch
                     validation_data=(self.X_val, self.Y_val),
-                    callbacks=[self.early_stop, self.tensorboard],
+                    callbacks=[self.early_stop, tensorboard],
                     # callbacks=[self.early_stop, self.tensorboard, self.reduce_lr],
                     )
         self.losses = pd.DataFrame(self.dyn.history.history)
@@ -441,15 +443,15 @@ if __name__ == '__main__':
                     )  # to run using env.step()
     else:
 
-        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=500,
-                    rollouts=100, epochs=100, bootstrapIter=100, bootstrap_rollouts=800,
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=20,
+                    rollouts=50, epochs=50, bootstrapIter=10, bootstrap_rollouts=10,
                     bootstrap=bootstrap)  # to run using dyn and rew
     # statement = "mbrl.run_mbrl(train=train, iter=50)"
     # cProfile.run(statement, filename="cpro.txt", sort=-1)
     profiler = cProfile.Profile()
     profiler.enable()
     start = time.time()
-    mbrl.run_mbrl(train=train, iter=800, render=render, retrain_after_iter=retrain_after_iter)
+    mbrl.run_mbrl(train=train, iter=25, render=render, retrain_after_iter=retrain_after_iter)
     # print(time.time() - start)
     profiler.disable()
     stats = pstats.Stats(profiler).sort_stats('cumtime')

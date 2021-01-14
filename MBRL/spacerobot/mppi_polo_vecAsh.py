@@ -146,7 +146,7 @@ class MPPI:
             eps[i] = beta_0 * eps[i] + beta_1 * eps[i - 1] + beta_2 * eps[i - 2]
         return base_act + eps
 
-    def generate_paths(self, start_state, base_act, filter_coefs, base_seed):
+    def generate_paths1(self, start_state, base_act, filter_coefs, base_seed):
         """
         first generate enough perturbed actions
         then do rollouts with generated actions
@@ -159,6 +159,29 @@ class MPPI:
             act[i, :, :] = self.generate_perturbed_actions(base_act, filter_coefs)
         rewards = self.do_env_rollout(start_state, act)
         return act, rewards
+
+    def generate_paths(self, start_state, base_act, filter_coefs, base_seed):
+        """
+        first generate enough perturbed actions
+        then do rollouts with generated actions
+        set seed inside this function for multiprocessing
+        """
+        N = 2*self.rollouts
+
+        np.random.seed(base_seed)
+        act = np.zeros((N, *base_act.shape))
+        for i in range(N):
+            act[i, :, :] = self.generate_perturbed_actions(base_act, filter_coefs)
+        for kk in range(10):
+            rewards = self.do_env_rollout(start_state, act)
+            reward_per_horizon = np.sum(rewards, axis=1)
+            top_idx = np.argsort(-reward_per_horizon)[-N//2:]
+            best_act = act[top_idx, :, :]
+            # for i in range(N//2):
+            new_pert_act = self.generate_perturbed_actions(best_act, filter_coefs)
+            act = np.vstack((best_act, new_pert_act))
+        rewards = self.do_env_rollout(start_state, best_act)
+        return best_act, rewards
 
 
 def run_mppi(mppi, env, retrain_dynamics=None, retrain_after_iter=50, iter=200, render=True):
