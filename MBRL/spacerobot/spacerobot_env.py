@@ -51,7 +51,7 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         self.target_sid = 0
 
         # fullpath = os.path.join(os.path.dirname(__file__), "assets", "spaceRobot.xml")
-        fullpath = '/home/ash/Ash/repo/spaceRobot_RL/MBRL/spacerobot/spaceRobot4mbrl.xml'
+        fullpath = '/home/ashith/Ash/repo/spaceRobot_RL/MBRL/spacerobot/spaceRobot4mbrl.xml'
         mujoco_env.MujocoEnv.__init__(self, fullpath, 2)
         utils.EzPickle.__init__(self)
         """
@@ -154,12 +154,15 @@ class SpaceRobotEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         v.cam.trackbodyid = 0
         v.cam.distance = self.model.stat.extent
 
-    def get_env_state(self):
+    def get_env_state1(self):
         # target_pos1 = self.data.get_site_xpos('debrisSite').copy()
         target_pos = self.model.site_pos[self.target_sid].copy()
         return dict(qp=self.data.qpos.copy(), qv=self.data.qvel.copy(),
                     qa=self.data.qacc.copy(),
                     target_pos=target_pos, timestep=self.env_timestep)
+
+    def get_env_state(self):
+        return self.data.qpos.copy(), self.data.qvel.copy()
 
     def set_env_state(self, qp, qv):
         self.sim.reset()
