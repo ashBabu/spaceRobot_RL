@@ -31,10 +31,11 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 class MBRL:
     # dynamics=None and reward=None uses the env.step() to calculate the next_state and reward
     def __init__(self, dynamics=1, reward=1, env_name='SpaceRobot-v0', lr=0.001, horizon=500,
-                 rollouts=500, epochs=150, bootstrap=False, bootstrapIter=300, bootstrap_rollouts=300):
+                 rollouts=500, epochs=150, bootstrap=False, bootstrapIter=300, bootstrap_rollouts=300, model='DNN'):
         # self.env = gym.make(env_name)
         self.env = SpaceRobotEnv()
         self.env.reset()
+        self.model = model
         self.env_cpy = copy.deepcopy(self.env)
         self.env_cpy.reset()
         self.target_loc = self.env.data.get_site_xpos('debrisSite')
@@ -51,26 +52,21 @@ class MBRL:
         self.rollouts = rollouts  # K
         self.epochs = epochs
         self.storeData = None  # np.random.randn(self.bootstrapIter, self.s_dim + self.a_dim)
-        self.dyn = self.dyn_model(34, 27)
+        self.dyn = self.dyn_model(34, 27, model=self.model)
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
         # self.dyn.load_weights('save_weights/trainedWeights500_cem')
-        self.dyn.load_weights('save_weights/trainedWeights500_floatbase_try_improve2')
+        if self.model == 'DNN':
+            self.dyn.load_weights('save_weights/trainedWeights500_floatbase_try_improve2')
+            scalarX = Path("save_scalars/scalarX_float_base.gz")
+            self.load_scalars(scalarX, modelName='float_base.gz')
+        else:
+            scalarX = Path("save_scalars/scalarX_float_base_lstm.gz")
+            self.load_scalars(scalarX, modelName='float_base_lstm.gz')
         # self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time())+'float_base')
 
-        scalarX = Path("save_scalars/scalarX_float_base.gz")
         # scalarU = Path("save_scalars/scalarU.gz")
         # scalardX = Path("save_scalars/scalardX.gz")
-        if scalarX.is_file():
-            self.scalarX = joblib.load('save_scalars/scalarX_float_base.gz')
-            self.scalarU = joblib.load('save_scalars/scalarU_float_base.gz')
-            self.scalardX = joblib.load('save_scalars/scalardX_float_base.gz')
-            self.fit = False
-        else:
-            self.scalarX = StandardScaler()  # StandardScaler()  RobustScaler(), MinMaxScaler(feature_range=(-1, 1))
-            self.scalarU = StandardScaler()
-            self.scalardX = StandardScaler()
-            self.fit = True
 
         if dynamics is None:
             self.dynamics = dynamics
@@ -81,7 +77,7 @@ class MBRL:
             self.val_rollout = 50
             self.val_iter_per_rollout = 200
             self.storeValData = self.collectValdata(self.val_rollout, self.val_iter_per_rollout)
-            self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
+            # self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
         if reward is None:
             self.reward = reward
         else:
@@ -91,7 +87,7 @@ class MBRL:
         if bootstrap:
             self.bootstrap_rollouts = bootstrap_rollouts
             self.bootstrapIter = bootstrapIter
-            self.bootstrap(self.bootstrap_rollouts, self.bootstrapIter, storeData=True, train=True)
+            self.bootstrap(self.bootstrap_rollouts, self.bootstrapIter, storeData=True, train=True, model=self.model)
             print('Finished bootsrapping and training the bootsrapped dataset')
 
         self.mppi_gym = mppi_polo_vecAsh.MPPI(self.env, dynamics=self.dynamics, reward=self.reward,
@@ -105,6 +101,17 @@ class MBRL:
                                               default_act='mean',
                                               seed=2145
                                               )
+    def load_scalars(self, scalarX, modelName='a'):
+        if scalarX.is_file():
+            self.scalarX = joblib.load('save_scalars/scalarX_'+ modelName)
+            self.scalarU = joblib.load('save_scalars/scalarU_'+ modelName)
+            self.scalardX = joblib.load('save_scalars/scalardX_'+ modelName)
+            self.fit = False
+        else:
+            self.scalarX = StandardScaler()  # StandardScaler()  RobustScaler(), MinMaxScaler(feature_range=(-1, 1))
+            self.scalarU = StandardScaler()
+            self.scalardX = StandardScaler()
+            self.fit = True
     # @jit(target ="cuda")
     # @vectorize(['float32(float32, float32, float32)',
     #             'float64(float64, float64, float64)',
@@ -121,8 +128,12 @@ class MBRL:
             # total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=None,
             #                                                     iter=iter, retrain_after_iter=100, render=True)
 
-            np.save('actions_floatbase_try_improve3.npy', np.array(actions), allow_pickle=True)
-            self.save_weights(self.dyn, 'trainedWeights500_floatbase_try_improve3')
+            if self.model == 'DNN':
+                np.save('actions_floatbase_try_improve3.npy', np.array(actions), allow_pickle=True)
+                self.save_weights(self.dyn, 'trainedWeights500_floatbase_try_improve3')
+            else:
+                np.save('actions_floatbase_lstm.npy', np.array(actions), allow_pickle=True)
+                self.save_weights(self.dyn, 'trainedWeights500_floatbase_lstm')
         else:
             rewards, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, iter=iter)
             np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
@@ -173,8 +184,10 @@ class MBRL:
         s1 = copy.deepcopy(state)
         s1_tr, act_tr = self.scalarX.transform(s1), self.scalarU.transform(u)
         s2 = np.hstack((s1_tr, act_tr))
-        # pred_dx = np.squeeze(self.dyn(s2.reshape(*s2.shape, 1)).numpy())  ## if model is lstm
-        pred_dx = np.squeeze(self.dyn(s2[None, :]).numpy())
+        if self.model == 'LSTM':
+            pred_dx = np.squeeze(self.dyn(s2.reshape(*s2.shape, 1)).numpy())  ## if model is lstm
+        else:
+            pred_dx = np.squeeze(self.dyn(s2[None, :]).numpy())
         state_residual = dt * self.scalardX.inverse_transform(pred_dx)
         next_state += state_residual
         return next_state
@@ -205,12 +218,20 @@ class MBRL:
         dX = np.diff(X, axis=0)  # state residual. makes the dimension less by one
 
         if fit:
-            self.scalarX.fit(X)
-            self.scalarU.fit(U)
-            self.scalardX.fit(dX)
-            joblib.dump(self.scalarX, 'save_scalars/scalarX_float_base.gz')
-            joblib.dump(self.scalarU, 'save_scalars/scalarU_float_base.gz')
-            joblib.dump(self.scalardX, 'save_scalars/scalardX_float_base.gz')
+            if self.model=='DNN':
+                self.scalarX.fit(X)
+                self.scalarU.fit(U)
+                self.scalardX.fit(dX)
+                joblib.dump(self.scalarX, 'save_scalars/scalarX_float_base.gz')
+                joblib.dump(self.scalarU, 'save_scalars/scalarU_float_base.gz')
+                joblib.dump(self.scalardX, 'save_scalars/scalardX_float_base.gz')
+            elif self.model=='LSTM':
+                self.scalarX.fit(X)
+                self.scalarU.fit(U)
+                self.scalardX.fit(dX)
+                joblib.dump(self.scalarX, 'save_scalars/scalarX_float_base_lstm.gz')
+                joblib.dump(self.scalarU, 'save_scalars/scalarU_float_base_lstm.gz')
+                joblib.dump(self.scalardX, 'save_scalars/scalardX_float_base_lstm.gz')
         normX = self.scalarX.transform(X)
         normU = self.scalarU.transform(U)
         normdX = self.scalardX.transform(dX)
@@ -220,7 +241,7 @@ class MBRL:
         outputs = normdX
         return inputs, outputs
 
-    def dyn_model(self, in_dim, out_dim):
+    def dyn_model(self, in_dim, out_dim, model='DNN'):
         ##############################################################
         """
         Layer Initializers
@@ -234,19 +255,35 @@ class MBRL:
             staircase=False)
         optimizer = tf.keras.optimizers.Adam(lr_schedule)
         initializer = tf.keras.initializers.GlorotNormal(seed=None)
-        model = tf.keras.Sequential([
-            tf.keras.Input(shape=(in_dim, )),
-            # tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
-            # tf.keras.layers.Dropout(0.2),
-            # tf.keras.layers.LSTM(units=50),
-            tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
-            # tf.keras.layers.Dropout(0.2),
-            # tf.keras.layers.Dense(256, activation='relu'),
-            # tf.keras.layers.Dropout(0.2),
-            # tf.keras.layers.Dense(256, activation='relu'),
-            tf.keras.layers.Dense(out_dim),
-        ])
+        if model == 'DNN':  # just fully connected feedforward neural networks
+            model = tf.keras.Sequential([
+                tf.keras.Input(shape=(in_dim, )),
+                # tf.keras.layers.Dropout(0.2),
+                tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
+                # tf.keras.layers.Dropout(0.2),
+                # tf.keras.layers.LSTM(units=50),
+                tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
+                # tf.keras.layers.Dropout(0.2),
+                # tf.keras.layers.Dense(256, activation='relu'),
+                # tf.keras.layers.Dropout(0.2),
+                # tf.keras.layers.Dense(256, activation='relu'),
+                tf.keras.layers.Dense(out_dim),
+            ])
+        else:  # LSTM
+            # model = tf.keras.Sequential([
+            #         tf.keras.layers.LSTM(return_sequences=True, input_shape=(in_dim, 1)),
+            #         tf.keras.layers.SimpleRNN(units=200),
+            #         tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
+            #         tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
+            #         tf.keras.layers.Dense(out_dim)
+            # ])
+            ts_inputs = tf.keras.Input(shape=(in_dim, 1))
+            x = tf.keras.layers.LSTM(units=50)(ts_inputs)
+            x = tf.keras.layers.Dropout(0.05)(x)
+            x = tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer)(x)
+            x = tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer)(x)
+            outputs = tf.keras.layers.Dense(out_dim, activation='linear')(x)
+            model = tf.keras.Model(inputs=ts_inputs, outputs=outputs)
 
         #"""
         # Sequential Model
@@ -254,35 +291,15 @@ class MBRL:
         # model.compile(optimizer='adam', loss='kl_divergence', metrics=['accuracy'])
         # model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
         # """
-
-        """
-        # LSTM Model
-        ###########
-        model = tf.keras.Sequential()
-        model.add(tf.keras.layers.LSTM(units=50, return_sequences=True, input_shape=(in_dim, 1)))
-        model.add(tf.keras.layers.Dropout(0.2))
-        # Adding a second LSTM layer and Dropout layer
-        model.add(tf.keras.layers.LSTM(units=50, return_sequences=True))
-        model.add(tf.keras.layers.Dropout(0.2))
-        # Adding a third LSTM layer and Dropout layer
-        model.add(tf.keras.layers.LSTM(units=50, return_sequences=True))
-        model.add(tf.keras.layers.Dropout(0.2))
-        # Adding a fourth LSTM layer and and Dropout layer
-        model.add(tf.keras.layers.LSTM(units=50))
-        model.add(tf.keras.layers.Dropout(0.2))
-        # Adding the output layer
-        # For Full connection layer we use dense
-        # As the output is 1D so we use unit=1
-        model.add(tf.keras.layers.Dense(units=out_dim))
-        # model.compile(optimizer='adam', loss='mae')
-        """
         model.compile(optimizer='Adam', loss='mse')
         # model.compile(optimizer=optimizer, loss='mse')
-
         return model
 
     def angle_normalize(self, x):
         return ((x + np.pi) % (2 * np.pi)) - np.pi
+
+    def resh(self, innp):
+        return innp.reshape(*innp.shape, 1)
 
     def train(self, dataset, fit=False, model='STM', preprocessVal=False):
         """
@@ -314,8 +331,11 @@ class MBRL:
         if preprocessVal:
             self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=False)
         if model == 'LSTM':
-            inputs = inputs.reshape(*inputs.shape, 1)
-            outputs = outputs.reshape(*outputs.shape, 1)
+            inputs = self.resh(inputs)
+            outputs = self.resh(outputs)
+            self.X_val = self.resh(self.X_val)
+            self.Y_val = self.resh(self.Y_val)
+
         tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()) + 'float_base')
         self.dyn.fit(
                     inputs,
@@ -351,7 +371,7 @@ class MBRL:
         # xu = dataset[:-1]  # make same size as Y
         # fwd_dyn_nn.fit(xu, Y, epochs=500)
 
-    def bootstrap(self, n_rollouts, n_iter_per_rollout, storeData=False, train=False):
+    def bootstrap(self, n_rollouts, n_iter_per_rollout, storeData=False, train=False, model='DNN'):
         # logger.info("bootstrapping with random action for %d actions", self.bootstrapIter)
         new_data = np.zeros((n_iter_per_rollout, self.s_dim + self.a_dim))
         # new_data = np.zeros((bootstrapIter, num_arm_states+a_dim))
@@ -372,7 +392,7 @@ class MBRL:
         data = np.concatenate(dataset, axis=0)
         # np.save('data.npy', new_data, allow_pickle=True)
         if train:
-            self.train(data, fit=self.fit, preprocessVal=True)
+            self.train(data, fit=self.fit, preprocessVal=True, model=model)
         if storeData:
             self.storeData = data
         # logger.info("bootstrapping finished")
@@ -439,7 +459,9 @@ if __name__ == '__main__':
 
     dyn = 0
     render = 0
-    retrain_after_iter = 150
+    retrain_after_iter = 5
+    # model = 'DNN'
+    model = 'LSTM'
     if dyn:
         bootstrap = 0
         train = 0
@@ -453,15 +475,15 @@ if __name__ == '__main__':
                     )  # to run using env.step()
     else:
 
-        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=30,
-                    rollouts=800, epochs=150, bootstrapIter=100, bootstrap_rollouts=100,
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=30, model=model,
+                    rollouts=400, epochs=100, bootstrapIter=50, bootstrap_rollouts=500,
                     bootstrap=bootstrap)  # to run using dyn and rew
     # statement = "mbrl.run_mbrl(train=train, iter=50)"
     # cProfile.run(statement, filename="cpro.txt", sort=-1)
     profiler = cProfile.Profile()
     profiler.enable()
     start = time.time()
-    mbrl.run_mbrl(train=train, iter=2000, render=render, retrain_after_iter=retrain_after_iter)
+    mbrl.run_mbrl(train=train, iter=600, render=render, retrain_after_iter=retrain_after_iter)
     # print(time.time() - start)
     profiler.disable()
     stats = pstats.Stats(profiler).sort_stats('cumtime')
