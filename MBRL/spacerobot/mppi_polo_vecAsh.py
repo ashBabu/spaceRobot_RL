@@ -146,7 +146,7 @@ class MPPI:
             eps[i] = beta_0 * eps[i] + beta_1 * eps[i - 1] + beta_2 * eps[i - 2]
         return base_act + eps
 
-    def generate_paths1(self, start_state, base_act, filter_coefs, base_seed):
+    def generate_paths(self, start_state, base_act, filter_coefs, base_seed):
         """
         first generate enough perturbed actions
         then do rollouts with generated actions
@@ -160,7 +160,7 @@ class MPPI:
         rewards = self.do_env_rollout(start_state, act)
         return act, rewards
 
-    def generate_paths(self, start_state, base_act, filter_coefs, base_seed):
+    def generate_paths1(self, start_state, base_act, filter_coefs, base_seed):
         """
         first generate enough perturbed actions
         then do rollouts with generated actions
@@ -186,9 +186,9 @@ class MPPI:
 
 def run_mppi(mppi, env, retrain_dynamics=None, retrain_after_iter=50, iter=200, render=True):
     dataset = np.zeros((retrain_after_iter, mppi.nx + mppi.nu))
-    total_reward = 0
     states, actions = [], []
     nn = 0
+    rewards = np.zeros(iter)
     for i in range(iter):
         # state = env.env.state.copy()
         # state = env.get_env_state().copy()
@@ -204,7 +204,7 @@ def run_mppi(mppi, env, retrain_dynamics=None, retrain_after_iter=50, iter=200, 
         mppi.advance_time(rew=r)
         print(i)
         # time.sleep(.2)
-        total_reward += r
+        rewards[i] = r
         if render:
             env.render()
         di = i % retrain_after_iter
@@ -215,5 +215,5 @@ def run_mppi(mppi, env, retrain_dynamics=None, retrain_after_iter=50, iter=200, 
                 # don't have to clear dataset since it'll be overridden, but useful for debugging
         dataset[di, :mppi.nx] = env.state_vector()
         dataset[di, mppi.nx:] = action
-    return total_reward, dataset, actions
+    return rewards, dataset, actions
 

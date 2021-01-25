@@ -17,13 +17,17 @@ from spacerobot_env import SpaceRobotEnv
 from tensorflow.keras.callbacks import EarlyStopping, TensorBoard, ReduceLROnPlateau
 from pathlib import Path
 import cProfile, pstats
+import matplotlib.pyplot as plt
 import types
-from numba import jit
+from numba import jit, vectorize, cuda
 from numba.experimental import jitclass
+import os
 np.set_printoptions(precision=3, suppress=True)
 print('This will work only with Tensorflow 2.x')
+gpus = tf.config.experimental.list_physical_devices('GPU')
 
-# @jitclass
+
+# @jit
 class MBRL:
     # dynamics=None and reward=None uses the env.step() to calculate the next_state and reward
     def __init__(self, dynamics=1, reward=1, env_name='SpaceRobot-v0', lr=0.001, horizon=500,
@@ -34,7 +38,7 @@ class MBRL:
         self.env_cpy = copy.deepcopy(self.env)
         self.env_cpy.reset()
         self.target_loc = self.env.data.get_site_xpos('debrisSite')
-
+        # target_loc = self.env.data.site_xpos[self.env.target_sid]  # another way to find self.target_loc
         self.dt = self.env.dt
         self.a_dim = self.env.action_space.shape[0]
         self.s_dim = self.env.observation_space.shape[0]
@@ -43,18 +47,6 @@ class MBRL:
         self.early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=15)
         self.reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.00001)
 
-        if dynamics is None:
-            self.dynamics = dynamics
-        else:
-            # self.dynamics = self.dynamics_true
-            self.dynamics = self.dynamics_batch
-            # self.dynamics = types.MethodType(dynamics_batch, self)
-        if reward is None:
-            self.reward = reward
-        else:
-            self.reward = self.reward_batch
-            # self.reward = types.MethodType(reward_batch, self)
-
         self.horizon = horizon  # T
         self.rollouts = rollouts  # K
         self.epochs = epochs
@@ -62,12 +54,9 @@ class MBRL:
         self.dyn = self.dyn_model(34, 27)
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
-        # self.dyn.load_weights('save_weights/trainedWeights500_1')
-        self.dyn.load_weights('save_weights/trainedWeights500_float_base1')
-        self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time())+'float_base')
-        self.val_rollout = 50
-        self.val_iter_per_rollout = 500
-        self.storeValData = self.collectValdata(self.val_rollout, self.val_iter_per_rollout)
+        # self.dyn.load_weights('save_weights/trainedWeights500_cem')
+        self.dyn.load_weights('save_weights/trainedWeights500_floatbase_try_improve2')
+        # self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time())+'float_base')
 
         scalarX = Path("save_scalars/scalarX_float_base.gz")
         # scalarU = Path("save_scalars/scalarU.gz")
@@ -83,12 +72,27 @@ class MBRL:
             self.scalardX = StandardScaler()
             self.fit = True
 
+        if dynamics is None:
+            self.dynamics = dynamics
+        else:
+            # self.dynamics = self.dynamics_true
+            self.dynamics = self.dynamics_batch
+            # self.dynamics = types.MethodType(dynamics_batch, self)
+            self.val_rollout = 50
+            self.val_iter_per_rollout = 200
+            self.storeValData = self.collectValdata(self.val_rollout, self.val_iter_per_rollout)
+            self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
+        if reward is None:
+            self.reward = reward
+        else:
+            self.reward = self.reward_batch
+            # self.reward = types.MethodType(reward_batch, self)
+
         if bootstrap:
             self.bootstrap_rollouts = bootstrap_rollouts
             self.bootstrapIter = bootstrapIter
             self.bootstrap(self.bootstrap_rollouts, self.bootstrapIter, storeData=True, train=True)
             print('Finished bootsrapping and training the bootsrapped dataset')
-        self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
 
         self.mppi_gym = mppi_polo_vecAsh.MPPI(self.env, dynamics=self.dynamics, reward=self.reward,
                                               H=self.horizon,
@@ -101,19 +105,29 @@ class MBRL:
                                               default_act='mean',
                                               seed=2145
                                               )
-
+    # @jit(target ="cuda")
+    # @vectorize(['float32(float32, float32, float32)',
+    #             'float64(float64, float64, float64)',
+    #             'float64(float64, float64, float64)',
+    #             'float64(float64, float64, float64)',
+    #             'float64(float64, float64, float64)'],
+    #            target='cuda')
+    # @vectorize(['float32(string, float32, string, string, float32)'],
+    #              target='cuda')
     def run_mbrl(self, iter=200, train=False, render=False, retrain_after_iter=50):
         if train:
-            total_reward, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, retrain_dynamics=self.train,
+            rewards, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, retrain_dynamics=self.train,
                                                                 iter=iter, retrain_after_iter=retrain_after_iter, render=render)
             # total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=None,
             #                                                     iter=iter, retrain_after_iter=100, render=True)
 
-            np.save('actions_800_22_float_base1.npy', np.array(actions), allow_pickle=True)
-            self.save_weights(self.dyn, 'trainedWeights500_float_base1')
+            np.save('actions_floatbase_try_improve3.npy', np.array(actions), allow_pickle=True)
+            self.save_weights(self.dyn, 'trainedWeights500_floatbase_try_improve3')
         else:
-            total_reward, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, iter=iter)
+            rewards, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, iter=iter)
             np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
+            plt.plot(rewards, 'r')
+            plt.show()
 
     # @jit(nopython=True)
     def reward_batch(self, x0, act):
@@ -130,11 +144,16 @@ class MBRL:
                 qp, qv = s0[i, :14], s0[i, 14:]
                 self.env_cpy.set_env_state(qp, qv)
                 endEff_loc = self.env_cpy.data.get_site_xpos('end_effector')
+                # endEff_vel = self.env_cpy.data.get_site_xvel('end_effector')
                 # base_linVel = self.env_cpy.data.get_site_xvelp('baseSite')
                 # base_angVel = self.env_cpy.data.get_site_xvelr('baseSite')
                 # act, base_linVel, base_angVel = np.squeeze(act), np.squeeze(base_linVel), np.squeeze(base_angVel)
                 # rw_vel = np.dot(base_angVel, base_angVel) + np.dot(base_linVel, base_linVel)
-                reward[i] = -np.linalg.norm((self.target_loc - endEff_loc)) - lam_a * np.dot(act[i], act[i]) #- lam_a * rw_vel
+                rel_vel = self.env_cpy.data.site_xvelp[self.env_cpy.hand_sid] - self.env_cpy.data.site_xvelp[
+                    self.env_cpy.target_sid]  # relative velocity between end-effec & target
+                reward[i] = -np.linalg.norm((self.target_loc - endEff_loc)) - lam_a * np.dot(act[i], act[i]) \
+                            - np.dot(rel_vel, rel_vel)  #- lam_a * rw_vel
+            # reward[i] += 1
         else:
             qp, qv = s0[:14], s0[14:]
             self.env_cpy.set_env_state(qp, qv)
@@ -220,6 +239,7 @@ class MBRL:
             # tf.keras.layers.Dropout(0.2),
             tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
             # tf.keras.layers.Dropout(0.2),
+            # tf.keras.layers.LSTM(units=50),
             tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
             # tf.keras.layers.Dropout(0.2),
             # tf.keras.layers.Dense(256, activation='relu'),
@@ -285,7 +305,7 @@ class MBRL:
         # xu = xu[:-1]  # make same size as Y
         if self.storeData is not None:
             n = self.storeData.shape[0]
-            newData = self.storeData[np.random.choice(n, n//8, replace=False), :]
+            newData = self.storeData[np.random.choice(n, n//5, replace=False), :]
             # Data = np.vstack((newData, dataset))
             Data = dataset
         else:
@@ -296,6 +316,7 @@ class MBRL:
         if model == 'LSTM':
             inputs = inputs.reshape(*inputs.shape, 1)
             outputs = outputs.reshape(*outputs.shape, 1)
+        tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()) + 'float_base')
         self.dyn.fit(
                     inputs,
                     outputs,
@@ -305,7 +326,7 @@ class MBRL:
                     # monitoring validation loss and metrics
                     # at the end of each epoch
                     validation_data=(self.X_val, self.Y_val),
-                    callbacks=[self.early_stop, self.tensorboard],
+                    callbacks=[self.early_stop, tensorboard],
                     # callbacks=[self.early_stop, self.tensorboard, self.reduce_lr],
                     )
         self.losses = pd.DataFrame(self.dyn.history.history)
@@ -335,20 +356,19 @@ class MBRL:
         new_data = np.zeros((n_iter_per_rollout, self.s_dim + self.a_dim))
         # new_data = np.zeros((bootstrapIter, num_arm_states+a_dim))
         dataset = list()
-        for k in range(n_rollouts):
-            self.env_cpy.reset()
-            # qp, qv = self.env_cpy.get_env_state()
-            # self.env_cpy.set_env_state(qp, qv)
-            for i in range(n_iter_per_rollout):
-                # pre_action_state = self.env.state  # [num_base_states:]
-                pre_action_state = self.env_cpy.state_vector()  # [num_base_states:]
-                # pre_action_state = env_cpy.state_vector()[num_base_states:]
-                action = np.random.uniform(low=self.a_low, high=self.a_high) + np.random.normal(loc=0, scale=0.01, size=7)
-                self.env_cpy.step(action)
-                # env_cpy.render()
-                new_data[i, :self.s_dim] = pre_action_state
-                new_data[i, self.s_dim:] = action
-            dataset.append(new_data)
+        self.env_cpy.reset()
+        for j in range(20):
+            qp, qv = self.env_cpy.get_env_state()
+            for k in range(n_rollouts):
+                self.env_cpy.set_env_state(qp, qv)
+                for i in range(n_iter_per_rollout):
+                    pre_action_state = self.env_cpy.state_vector()  # [num_base_states:]
+                    action = np.random.uniform(low=self.a_low, high=self.a_high) + np.random.normal(loc=0, scale=0.01, size=7)
+                    self.env_cpy.step(action)
+                    # env_cpy.render()
+                    new_data[i, :self.s_dim] = pre_action_state
+                    new_data[i, self.s_dim:] = action
+                dataset.append(new_data)
         data = np.concatenate(dataset, axis=0)
         # np.save('data.npy', new_data, allow_pickle=True)
         if train:
@@ -419,7 +439,7 @@ if __name__ == '__main__':
 
     dyn = 0
     render = 0
-    retrain_after_iter = 50
+    retrain_after_iter = 150
     if dyn:
         bootstrap = 0
         train = 0
@@ -433,15 +453,15 @@ if __name__ == '__main__':
                     )  # to run using env.step()
     else:
 
-        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=200,
-                    rollouts=100, epochs=150, bootstrapIter=100, bootstrap_rollouts=300,
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=30,
+                    rollouts=800, epochs=150, bootstrapIter=100, bootstrap_rollouts=100,
                     bootstrap=bootstrap)  # to run using dyn and rew
     # statement = "mbrl.run_mbrl(train=train, iter=50)"
     # cProfile.run(statement, filename="cpro.txt", sort=-1)
     profiler = cProfile.Profile()
     profiler.enable()
     start = time.time()
-    mbrl.run_mbrl(train=train, iter=800, render=render, retrain_after_iter=retrain_after_iter)
+    mbrl.run_mbrl(train=train, iter=2000, render=render, retrain_after_iter=retrain_after_iter)
     # print(time.time() - start)
     profiler.disable()
     stats = pstats.Stats(profiler).sort_stats('cumtime')
