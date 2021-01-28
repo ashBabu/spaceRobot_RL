@@ -14,3 +14,4 @@ recording/
 *.training*
 checkpoint
 style.css
+MBRL/spacerobot/logs

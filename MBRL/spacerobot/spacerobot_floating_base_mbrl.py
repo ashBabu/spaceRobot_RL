@@ -61,6 +61,7 @@ class MBRL:
             scalarX = Path("save_scalars/scalarX_float_base.gz")
             self.load_scalars(scalarX, modelName='float_base.gz')
         else:
+            self.dyn.load_weights('save_weights/trainedWeights500_floatbase_lstm2')
             scalarX = Path("save_scalars/scalarX_float_base_lstm.gz")
             self.load_scalars(scalarX, modelName='float_base_lstm.gz')
         # self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time())+'float_base')
@@ -74,8 +75,8 @@ class MBRL:
             # self.dynamics = self.dynamics_true
             self.dynamics = self.dynamics_batch
             # self.dynamics = types.MethodType(dynamics_batch, self)
-            self.val_rollout = 50
-            self.val_iter_per_rollout = 200
+            self.val_rollout = 200
+            self.val_iter_per_rollout = 40
             self.storeValData = self.collectValdata(self.val_rollout, self.val_iter_per_rollout)
             # self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
         if reward is None:
@@ -132,8 +133,8 @@ class MBRL:
                 np.save('actions_floatbase_try_improve3.npy', np.array(actions), allow_pickle=True)
                 self.save_weights(self.dyn, 'trainedWeights500_floatbase_try_improve3')
             else:
-                np.save('actions_floatbase_lstm.npy', np.array(actions), allow_pickle=True)
-                self.save_weights(self.dyn, 'trainedWeights500_floatbase_lstm')
+                np.save('actions_floatbase_lstm3.npy', np.array(actions), allow_pickle=True)
+                self.save_weights(self.dyn, 'trainedWeights500_floatbase_lstm3')
         else:
             rewards, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, iter=iter)
             np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
@@ -270,13 +271,7 @@ class MBRL:
                 tf.keras.layers.Dense(out_dim),
             ])
         else:  # LSTM
-            # model = tf.keras.Sequential([
-            #         tf.keras.layers.LSTM(return_sequences=True, input_shape=(in_dim, 1)),
-            #         tf.keras.layers.SimpleRNN(units=200),
-            #         tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
-            #         tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
-            #         tf.keras.layers.Dense(out_dim)
-            # ])
+
             ts_inputs = tf.keras.Input(shape=(in_dim, 1))
             x = tf.keras.layers.LSTM(units=50)(ts_inputs)
             x = tf.keras.layers.Dropout(0.05)(x)
@@ -301,7 +296,7 @@ class MBRL:
     def resh(self, innp):
         return innp.reshape(*innp.shape, 1)
 
-    def train(self, dataset, fit=False, model='STM', preprocessVal=False):
+    def train(self, dataset, fit=False, preprocessVal=False):
         """
         Trying to find the increment in states, f_(theta), from the equation
         s_{t+1} = s_t + dt * f_(theta)(s_t, a_t)
@@ -330,11 +325,12 @@ class MBRL:
         inputs, outputs = self.preprocess(Data, fit=fit)
         if preprocessVal:
             self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=False)
-        if model == 'LSTM':
+        if self.model == 'LSTM':
             inputs = self.resh(inputs)
             outputs = self.resh(outputs)
-            self.X_val = self.resh(self.X_val)
-            self.Y_val = self.resh(self.Y_val)
+            if not self.X_val.ndim == 3:
+                self.X_val = self.resh(self.X_val)
+                self.Y_val = self.resh(self.Y_val)
 
         tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()) + 'float_base')
         self.dyn.fit(
@@ -392,7 +388,7 @@ class MBRL:
         data = np.concatenate(dataset, axis=0)
         # np.save('data.npy', new_data, allow_pickle=True)
         if train:
-            self.train(data, fit=self.fit, preprocessVal=True, model=model)
+            self.train(data, fit=self.fit, preprocessVal=True)
         if storeData:
             self.storeData = data
         # logger.info("bootstrapping finished")
@@ -459,7 +455,7 @@ if __name__ == '__main__':
 
     dyn = 0
     render = 0
-    retrain_after_iter = 5
+    retrain_after_iter = 100
     # model = 'DNN'
     model = 'LSTM'
     if dyn:
@@ -475,15 +471,15 @@ if __name__ == '__main__':
                     )  # to run using env.step()
     else:
 
-        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=30, model=model,
-                    rollouts=400, epochs=100, bootstrapIter=50, bootstrap_rollouts=500,
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.002, horizon=40, model=model,
+                    rollouts=600, epochs=150, bootstrapIter=40, bootstrap_rollouts=500,
                     bootstrap=bootstrap)  # to run using dyn and rew
     # statement = "mbrl.run_mbrl(train=train, iter=50)"
     # cProfile.run(statement, filename="cpro.txt", sort=-1)
     profiler = cProfile.Profile()
     profiler.enable()
     start = time.time()
-    mbrl.run_mbrl(train=train, iter=600, render=render, retrain_after_iter=retrain_after_iter)
+    mbrl.run_mbrl(train=train, iter=1500, render=render, retrain_after_iter=retrain_after_iter)
     # print(time.time() - start)
     profiler.disable()
     stats = pstats.Stats(profiler).sort_stats('cumtime')
