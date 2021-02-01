@@ -26,6 +26,10 @@ np.set_printoptions(precision=3, suppress=True)
 print('This will work only with Tensorflow 2.x')
 gpus = tf.config.experimental.list_physical_devices('GPU')
 
+qpos=np.array([ 0.04 , -0.196,  4.877,  0.995, -0.026, -0.045,  0.084,  0.103,
+        0.559,  0.668,  0.048, -0.17 , -0.14 ,  0.201])
+qvel=np.array([0.00   ,  0.00   , 0.00   , 0.00   , 0.00,  0.00   , 0.00, 0.00,
+        0.00,  0.00, 0.00, 0.00,  0.00])
 
 # @jit
 class MBRL:
@@ -61,7 +65,7 @@ class MBRL:
             scalarX = Path("save_scalars/scalarX_float_base.gz")
             self.load_scalars(scalarX, modelName='float_base.gz')
         else:
-            self.dyn.load_weights('save_weights/trainedWeights500_floatbase_lstm2')
+            self.dyn.load_weights('save_weights/trainedWeights500_floatbase_lstm5')
             scalarX = Path("save_scalars/scalarX_float_base_lstm.gz")
             self.load_scalars(scalarX, modelName='float_base_lstm.gz')
         # self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time())+'float_base')
@@ -133,8 +137,8 @@ class MBRL:
                 np.save('actions_floatbase_try_improve3.npy', np.array(actions), allow_pickle=True)
                 self.save_weights(self.dyn, 'trainedWeights500_floatbase_try_improve3')
             else:
-                np.save('actions_floatbase_lstm3.npy', np.array(actions), allow_pickle=True)
-                self.save_weights(self.dyn, 'trainedWeights500_floatbase_lstm3')
+                np.save('actions_floatbase_lstm5.npy', np.array(actions), allow_pickle=True)
+                self.save_weights(self.dyn, 'trainedWeights500_floatbase_lstm5')
         else:
             rewards, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, iter=iter)
             np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
@@ -367,13 +371,41 @@ class MBRL:
         # xu = dataset[:-1]  # make same size as Y
         # fwd_dyn_nn.fit(xu, Y, epochs=500)
 
+    def bootstrapAugment(self, n_rollouts, n_iter_per_rollout):
+        new_data = np.zeros((n_iter_per_rollout, self.s_dim + self.a_dim))
+        dataset = list()
+        self.env_cpy.reset()
+        # for j in range(50):
+        qp, qv = qpos, qvel
+        for k in range(n_rollouts):
+            self.env_cpy.set_env_state(qp, qv)
+            for i in range(n_iter_per_rollout):
+                pre_action_state = self.env_cpy.state_vector()  # [num_base_states:]
+                action = np.random.uniform(low=self.a_low, high=self.a_high) + np.random.normal(loc=0, scale=0.01, size=7)
+                self.env_cpy.step(action)
+                # env_cpy.render()
+                new_data[i, :self.s_dim] = pre_action_state
+                new_data[i, self.s_dim:] = action
+            new_data = np.flip(new_data, axis=0)
+            dataset.append(new_data)
+        data = np.concatenate(dataset, axis=0)
+        # # np.save('data.npy', new_data, allow_pickle=True)
+        # if train:
+        #     self.train(data, fit=self.fit, preprocessVal=True)
+        # if storeData:
+        #     self.storeData = data
+        # # logger.info("bootstrapping finished")
+        self.env_cpy.reset()
+        return data
+
     def bootstrap(self, n_rollouts, n_iter_per_rollout, storeData=False, train=False, model='DNN'):
         # logger.info("bootstrapping with random action for %d actions", self.bootstrapIter)
         new_data = np.zeros((n_iter_per_rollout, self.s_dim + self.a_dim))
+        dataAugment = self.bootstrapAugment(n_rollouts//2, n_iter_per_rollout)
         # new_data = np.zeros((bootstrapIter, num_arm_states+a_dim))
         dataset = list()
         self.env_cpy.reset()
-        for j in range(20):
+        for j in range(50):
             qp, qv = self.env_cpy.get_env_state()
             for k in range(n_rollouts):
                 self.env_cpy.set_env_state(qp, qv)
@@ -385,6 +417,7 @@ class MBRL:
                     new_data[i, :self.s_dim] = pre_action_state
                     new_data[i, self.s_dim:] = action
                 dataset.append(new_data)
+        dataset.append(dataAugment)
         data = np.concatenate(dataset, axis=0)
         # np.save('data.npy', new_data, allow_pickle=True)
         if train:
@@ -471,7 +504,7 @@ if __name__ == '__main__':
                     )  # to run using env.step()
     else:
 
-        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.002, horizon=40, model=model,
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=40, model=model,
                     rollouts=600, epochs=150, bootstrapIter=40, bootstrap_rollouts=500,
                     bootstrap=bootstrap)  # to run using dyn and rew
     # statement = "mbrl.run_mbrl(train=train, iter=50)"
@@ -479,7 +512,7 @@ if __name__ == '__main__':
     profiler = cProfile.Profile()
     profiler.enable()
     start = time.time()
-    mbrl.run_mbrl(train=train, iter=1500, render=render, retrain_after_iter=retrain_after_iter)
+    mbrl.run_mbrl(train=train, iter=2000, render=render, retrain_after_iter=retrain_after_iter)
     # print(time.time() - start)
     profiler.disable()
     stats = pstats.Stats(profiler).sort_stats('cumtime')
