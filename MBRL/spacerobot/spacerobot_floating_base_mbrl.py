@@ -55,7 +55,7 @@ class MBRL:
         self.horizon = horizon  # T
         self.rollouts = rollouts  # K
         self.epochs = epochs
-        self.storeData = None  # np.random.randn(self.bootstrapIter, self.s_dim + self.a_dim)
+        self.augData, self.randData = None, None  # np.random.randn(self.bootstrapIter, self.s_dim + self.a_dim)
         self.dyn = self.dyn_model(34, 27, model=self.model)
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
@@ -65,7 +65,7 @@ class MBRL:
             scalarX = Path("save_scalars/scalarX_float_base.gz")
             self.load_scalars(scalarX, modelName='float_base.gz')
         else:
-            self.dyn.load_weights('save_weights/trainedWeights500_floatbase_lstm5')
+            self.dyn.load_weights('save_weights/trainedWeights500_floatbase_lstm2')
             scalarX = Path("save_scalars/scalarX_float_base_lstm.gz")
             self.load_scalars(scalarX, modelName='float_base_lstm.gz')
         # self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time())+'float_base')
@@ -90,6 +90,7 @@ class MBRL:
             # self.reward = types.MethodType(reward_batch, self)
 
         if bootstrap:
+            self.bootstrapAugment(300, 100)
             self.bootstrap_rollouts = bootstrap_rollouts
             self.bootstrapIter = bootstrapIter
             self.bootstrap(self.bootstrap_rollouts, self.bootstrapIter, storeData=True, train=True, model=self.model)
@@ -106,6 +107,7 @@ class MBRL:
                                               default_act='mean',
                                               seed=2145
                                               )
+
     def load_scalars(self, scalarX, modelName='a'):
         if scalarX.is_file():
             self.scalarX = joblib.load('save_scalars/scalarX_'+ modelName)
@@ -137,8 +139,8 @@ class MBRL:
                 np.save('actions_floatbase_try_improve3.npy', np.array(actions), allow_pickle=True)
                 self.save_weights(self.dyn, 'trainedWeights500_floatbase_try_improve3')
             else:
-                np.save('actions_floatbase_lstm5.npy', np.array(actions), allow_pickle=True)
-                self.save_weights(self.dyn, 'trainedWeights500_floatbase_lstm5')
+                np.save('actions_floatbase_lstm2_1.npy', np.array(actions), allow_pickle=True)
+                self.save_weights(self.dyn, 'trainedWeights500_floatbase_lstm2_1')
         else:
             rewards, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, iter=iter)
             np.save('actions_trueDyn.npy', np.array(actions), allow_pickle=True)
@@ -319,13 +321,14 @@ class MBRL:
         # dtheta_dt_manip = manip_joint_vel[1:, :] - manip_joint_vel[:-1, :]
         # Y = np.hstack((dtheta_manip, dtheta_dt_manip))  # x' - x residual
         # xu = xu[:-1]  # make same size as Y
-        if self.storeData is not None:
-            n = self.storeData.shape[0]
-            newData = self.storeData[np.random.choice(n, n//5, replace=False), :]
-            # Data = np.vstack((newData, dataset))
-            Data = dataset
+        if self.randData is not None:
+            n1, n2 = self.randData.shape[0], self.augData.shape[0]
+            newData1 = self.randData[np.random.choice(n, n//5, replace=False), :]
+            newData2 = self.augData[np.random.choice(n, n//3, replace=False), :]
+            Data = np.vstack((newData1, newData2, dataset))
+            # Data = dataset
         else:
-            Data = dataset
+            Data = np.vstack((self.augData, dataset))
         inputs, outputs = self.preprocess(Data, fit=fit)
         if preprocessVal:
             self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=False)
@@ -396,12 +399,13 @@ class MBRL:
         #     self.storeData = data
         # # logger.info("bootstrapping finished")
         self.env_cpy.reset()
+        self.augData = data
         return data
 
     def bootstrap(self, n_rollouts, n_iter_per_rollout, storeData=False, train=False, model='DNN'):
         # logger.info("bootstrapping with random action for %d actions", self.bootstrapIter)
         new_data = np.zeros((n_iter_per_rollout, self.s_dim + self.a_dim))
-        dataAugment = self.bootstrapAugment(n_rollouts//2, n_iter_per_rollout)
+        # dataAugment = self.bootstrapAugment(n_rollouts//2, n_iter_per_rollout)
         # new_data = np.zeros((bootstrapIter, num_arm_states+a_dim))
         dataset = list()
         self.env_cpy.reset()
@@ -417,13 +421,13 @@ class MBRL:
                     new_data[i, :self.s_dim] = pre_action_state
                     new_data[i, self.s_dim:] = action
                 dataset.append(new_data)
-        dataset.append(dataAugment)
+        # dataset.append(dataAugment)
         data = np.concatenate(dataset, axis=0)
         # np.save('data.npy', new_data, allow_pickle=True)
+        if storeData:
+            self.randData = data
         if train:
             self.train(data, fit=self.fit, preprocessVal=True)
-        if storeData:
-            self.storeData = data
         # logger.info("bootstrapping finished")
         self.env_cpy.reset()
         return data
@@ -488,7 +492,7 @@ if __name__ == '__main__':
 
     dyn = 0
     render = 0
-    retrain_after_iter = 100
+    retrain_after_iter = 5
     # model = 'DNN'
     model = 'LSTM'
     if dyn:
@@ -504,15 +508,18 @@ if __name__ == '__main__':
                     )  # to run using env.step()
     else:
 
-        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=40, model=model,
-                    rollouts=600, epochs=150, bootstrapIter=40, bootstrap_rollouts=500,
+        # mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=40, model=model,
+        #             rollouts=600, epochs=150, bootstrapIter=40, bootstrap_rollouts=500,
+        #             bootstrap=bootstrap)  # to run using dyn and rew
+         mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=5, model=model,
+                    rollouts=6, epochs=10, bootstrapIter=4, bootstrap_rollouts=5,
                     bootstrap=bootstrap)  # to run using dyn and rew
     # statement = "mbrl.run_mbrl(train=train, iter=50)"
     # cProfile.run(statement, filename="cpro.txt", sort=-1)
     profiler = cProfile.Profile()
     profiler.enable()
     start = time.time()
-    mbrl.run_mbrl(train=train, iter=2000, render=render, retrain_after_iter=retrain_after_iter)
+    mbrl.run_mbrl(train=train, iter=10, render=render, retrain_after_iter=retrain_after_iter)
     # print(time.time() - start)
     profiler.disable()
     stats = pstats.Stats(profiler).sort_stats('cumtime')
