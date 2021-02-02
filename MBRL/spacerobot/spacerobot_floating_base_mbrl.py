@@ -56,7 +56,7 @@ class MBRL:
         self.rollouts = rollouts  # K
         self.epochs = epochs
         self.augData, self.randData = None, None  # np.random.randn(self.bootstrapIter, self.s_dim + self.a_dim)
-        self.dyn = self.dyn_model(34, 27, model=self.model)
+        self.dyn = self.dyn_model(self.s_dim, self.a_dim, model=self.model)
         # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
         self.dyn_opt = opt.Adam(learning_rate=self.lr)
         # self.dyn.load_weights('save_weights/trainedWeights500_cem')
@@ -90,7 +90,7 @@ class MBRL:
             # self.reward = types.MethodType(reward_batch, self)
 
         if bootstrap:
-            self.bootstrapAugment(300, 100)
+            self.bootstrapAugment(300, 80)
             self.bootstrap_rollouts = bootstrap_rollouts
             self.bootstrapIter = bootstrapIter
             self.bootstrap(self.bootstrap_rollouts, self.bootstrapIter, storeData=True, train=True, model=self.model)
@@ -323,8 +323,8 @@ class MBRL:
         # xu = xu[:-1]  # make same size as Y
         if self.randData is not None:
             n1, n2 = self.randData.shape[0], self.augData.shape[0]
-            newData1 = self.randData[np.random.choice(n, n//5, replace=False), :]
-            newData2 = self.augData[np.random.choice(n, n//3, replace=False), :]
+            newData1 = self.randData[np.random.choice(n1, n1//5, replace=False), :]
+            newData2 = self.augData[np.random.choice(n2, n2//3, replace=False), :]
             Data = np.vstack((newData1, newData2, dataset))
             # Data = dataset
         else:
@@ -492,7 +492,7 @@ if __name__ == '__main__':
 
     dyn = 0
     render = 0
-    retrain_after_iter = 5
+    retrain_after_iter = 100
     # model = 'DNN'
     model = 'LSTM'
     if dyn:
@@ -508,18 +508,19 @@ if __name__ == '__main__':
                     )  # to run using env.step()
     else:
 
-        # mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=40, model=model,
-        #             rollouts=600, epochs=150, bootstrapIter=40, bootstrap_rollouts=500,
-        #             bootstrap=bootstrap)  # to run using dyn and rew
-         mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=5, model=model,
-                    rollouts=6, epochs=10, bootstrapIter=4, bootstrap_rollouts=5,
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=40, model=model,
+                    rollouts=600, epochs=150, bootstrapIter=40, bootstrap_rollouts=500,
                     bootstrap=bootstrap)  # to run using dyn and rew
+
+         # mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=5, model=model,
+         #            rollouts=6, epochs=10, bootstrapIter=4, bootstrap_rollouts=5,
+         #            bootstrap=bootstrap)  # to run using dyn and rew
     # statement = "mbrl.run_mbrl(train=train, iter=50)"
     # cProfile.run(statement, filename="cpro.txt", sort=-1)
     profiler = cProfile.Profile()
     profiler.enable()
     start = time.time()
-    mbrl.run_mbrl(train=train, iter=10, render=render, retrain_after_iter=retrain_after_iter)
+    mbrl.run_mbrl(train=train, iter=2000, render=render, retrain_after_iter=retrain_after_iter)
     # print(time.time() - start)
     profiler.disable()
     stats = pstats.Stats(profiler).sort_stats('cumtime')
