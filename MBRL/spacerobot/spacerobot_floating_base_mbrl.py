@@ -16,6 +16,8 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, Qu
 from spacerobot_env import SpaceRobotEnv
 from tensorflow.keras.callbacks import EarlyStopping, TensorBoard, ReduceLROnPlateau
 from pathlib import Path
+from tensorflow.keras import regularizers
+
 import cProfile, pstats
 import matplotlib.pyplot as plt
 import types
@@ -35,7 +37,8 @@ qvel=np.array([0.00   ,  0.00   , 0.00   , 0.00   , 0.00,  0.00   , 0.00, 0.00,
 class MBRL:
     # dynamics=None and reward=None uses the env.step() to calculate the next_state and reward
     def __init__(self, dynamics=1, reward=1, env_name='SpaceRobot-v0', lr=0.001, horizon=500,
-                 rollouts=500, epochs=150, bootstrap=False, bootstrapIter=300, bootstrap_rollouts=300, model='DNN'):
+                 rollouts=500, epochs=150, bootstrap=False, bootstrapIter=300, bootstrap_rollouts=300, model='DNN',
+                 startConfigIter=50, val_rollout=200, val_iter_per_rollout=40):
         # self.env = gym.make(env_name)
         self.env = SpaceRobotEnv()
         self.env.reset()
@@ -54,55 +57,45 @@ class MBRL:
 
         self.horizon = horizon  # T
         self.rollouts = rollouts  # K
-        self.epochs = epochs
-        self.augData, self.randData = None, None  # np.random.randn(self.bootstrapIter, self.s_dim + self.a_dim)
-        self.dyn = self.dyn_model(self.s_dim, self.a_dim, model=self.model)
-        # self.dyn = self.dyn_model(self.s_dim + self.a_dim, self.s_dim)
-        self.dyn_opt = opt.Adam(learning_rate=self.lr)
-        # self.dyn.load_weights('save_weights/trainedWeights500_cem')
-        if self.model == 'DNN':
-            self.dyn.load_weights('save_weights/trainedWeights500_floatbase_try_improve2')
-            scalarX = Path("save_scalars/scalarX_float_base.gz")
-            self.load_scalars(scalarX, modelName='float_base.gz')
-        else:
-            self.dyn.load_weights('save_weights/trainedWeights500_floatbase_lstm2')
-            scalarX = Path("save_scalars/scalarX_float_base_lstm.gz")
-            self.load_scalars(scalarX, modelName='float_base_lstm.gz')
-        # self.tensorboard = TensorBoard(log_dir="logs/{}".format(time.time())+'float_base')
 
-        # scalarU = Path("save_scalars/scalarU.gz")
-        # scalardX = Path("save_scalars/scalardX.gz")
+        self.epochs = epochs
+
+        scalarXU = Path("save_scalars/scalarXU_float_base_lstm.gz")
+        self.load_scalars(scalarXU, modelName='float_base_lstm.gz')
 
         if dynamics is None:
             self.dynamics = dynamics
         else:
-            # self.dynamics = self.dynamics_true
             self.dynamics = self.dynamics_batch
-            # self.dynamics = types.MethodType(dynamics_batch, self)
-            self.val_rollout = 200
-            self.val_iter_per_rollout = 40
-            self.storeValData = self.collectValdata(self.val_rollout, self.val_iter_per_rollout)
-            # self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=self.fit)
+
         if reward is None:
             self.reward = reward
         else:
             self.reward = self.reward_batch
-            # self.reward = types.MethodType(reward_batch, self)
 
         if bootstrap:
-            self.bootstrapAugment(300, 80)
+            self.startConfigIter = startConfigIter
             self.bootstrap_rollouts = bootstrap_rollouts
             self.bootstrapIter = bootstrapIter
-            self.bootstrap(self.bootstrap_rollouts, self.bootstrapIter, storeData=True, train=True, model=self.model)
+            self.val_rollout = val_rollout
+            self.val_iter_per_rollout = val_iter_per_rollout
+            self.randData = self.collectBootstrapData(self.bootstrap_rollouts, self.bootstrapIter)
+            self.ValData = self.collectValData(self.val_rollout, self.val_iter_per_rollout)
+            self.augData = self.bootstrapAugment(self.bootstrap_rollouts, self.bootstrapIter)
+            self.X_rand, self.Y_rand = self.preprocess(self.randData, fit=self.fit)
+            self.X_val, self.Y_val = self.preprocess(self.ValData)
+            self.X_aug, self.Y_aug = self.preprocess(self.augData)
+            XtrainBootstrap, YtrainBootstrap = np.vstack((self.X_rand, self.X_aug)), np.vstack((self.Y_rand, self.Y_aug))
+
+            self.dyn_opt = opt.Adam(learning_rate=self.lr)
+            self.dyn = self.dyn_model(model=self.model)
+            self.dyn.load_weights('save_weights/trainedWeights500_floatbase_testDnn')
+            self.bootstrapDataTrain(XtrainBootstrap, YtrainBootstrap)
             print('Finished bootsrapping and training the bootsrapped dataset')
 
         self.mppi_gym = mppi_polo_vecAsh.MPPI(self.env, dynamics=self.dynamics, reward=self.reward,
-                                              H=self.horizon,
-                                              rollouts=self.rollouts,
-                                              num_cpu=1,
-                                              kappa=5,
-                                              gamma=1,
-                                              mean=np.zeros(self.env.action_space.shape[0]),
+                                              H=self.horizon, rollouts=self.rollouts, num_cpu=1, kappa=5,
+                                              gamma=1, mean=np.zeros(self.env.action_space.shape[0]),
                                               filter_coefs=[np.ones(self.env.action_space.shape[0]), 0.25, 0.8, 0.0],
                                               default_act='mean',
                                               seed=2145
@@ -110,34 +103,24 @@ class MBRL:
 
     def load_scalars(self, scalarX, modelName='a'):
         if scalarX.is_file():
-            self.scalarX = joblib.load('save_scalars/scalarX_'+ modelName)
-            self.scalarU = joblib.load('save_scalars/scalarU_'+ modelName)
+            self.scalarXU = joblib.load('save_scalars/scalarXU_'+ modelName)
+            # self.scalarU = joblib.load('save_scalars/scalarU_'+ modelName)
             self.scalardX = joblib.load('save_scalars/scalardX_'+ modelName)
             self.fit = False
         else:
-            self.scalarX = StandardScaler()  # StandardScaler()  RobustScaler(), MinMaxScaler(feature_range=(-1, 1))
-            self.scalarU = StandardScaler()
-            self.scalardX = StandardScaler()
+            self.scalarXU = StandardScaler()  # StandardScaler()  RobustScaler(), MinMaxScaler(feature_range=(-1, 1))
+            # self.scalarU = StandardScaler()  # StandardScaler()  RobustScaler(), MinMaxScaler(feature_range=(-1, 1))
+            self.scalardX = StandardScaler()  # StandardScaler()  RobustScaler(), MinMaxScaler(feature_range=(-1, 1))
             self.fit = True
-    # @jit(target ="cuda")
-    # @vectorize(['float32(float32, float32, float32)',
-    #             'float64(float64, float64, float64)',
-    #             'float64(float64, float64, float64)',
-    #             'float64(float64, float64, float64)',
-    #             'float64(float64, float64, float64)'],
-    #            target='cuda')
-    # @vectorize(['float32(string, float32, string, string, float32)'],
-    #              target='cuda')
+
     def run_mbrl(self, iter=200, train=False, render=False, retrain_after_iter=50):
         if train:
             rewards, dataset, actions = mppi_polo_vecAsh.run_mppi(self.mppi_gym, self.env, retrain_dynamics=self.train,
                                                                 iter=iter, retrain_after_iter=retrain_after_iter, render=render)
-            # total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=None,
-            #                                                     iter=iter, retrain_after_iter=100, render=True)
 
             if self.model == 'DNN':
-                np.save('actions_floatbase_try_improve3.npy', np.array(actions), allow_pickle=True)
-                self.save_weights(self.dyn, 'trainedWeights500_floatbase_try_improve3')
+                np.save('actions_floatbase_testDnn_regularizer.npy', np.array(actions), allow_pickle=True)
+                self.save_weights(self.dyn, 'trainedWeights500_floatbase_testDnn_regularizer')
             else:
                 np.save('actions_floatbase_lstm2_1.npy', np.array(actions), allow_pickle=True)
                 self.save_weights(self.dyn, 'trainedWeights500_floatbase_lstm2_1')
@@ -147,7 +130,6 @@ class MBRL:
             plt.plot(rewards, 'r')
             plt.show()
 
-    # @jit(nopython=True)
     def reward_batch(self, x0, act):
         lam_a, lam_b = 0.001, 0
         if x0.ndim == 1:
@@ -183,18 +165,14 @@ class MBRL:
             reward = -np.linalg.norm((self.target_loc - endEff_loc)) - lam_a * np.dot(act, act) - lam_a * rw_vel
         return reward
 
-    # @jit(nopython=True)
     def dynamics_batch(self, state, perturbed_action):
         dt = 1
         u = np.clip(perturbed_action, self.a_low, self.a_high)
         next_state = state.copy()  # np.zeros_like(state)
         s1 = copy.deepcopy(state)
-        s1_tr, act_tr = self.scalarX.transform(s1), self.scalarU.transform(u)
-        s2 = np.hstack((s1_tr, act_tr))
-        if self.model == 'LSTM':
-            pred_dx = np.squeeze(self.dyn(s2.reshape(*s2.shape, 1)).numpy())  ## if model is lstm
-        else:
-            pred_dx = np.squeeze(self.dyn(s2[None, :]).numpy())
+        stateAction = np.hstack((s1, u))
+        stateAction = self.scalarXU.transform(stateAction)
+        pred_dx = self.dyn(stateAction).numpy()
         state_residual = dt * self.scalardX.inverse_transform(pred_dx)
         next_state += state_residual
         return next_state
@@ -220,35 +198,31 @@ class MBRL:
         return next_state
 
     def preprocess(self, data, fit=False):
-        X = data[1:, :self.s_dim]
-        U = data[1:, self.s_dim:]
-        dX = np.diff(X, axis=0)  # state residual. makes the dimension less by one
-
+        if data.ndim == 3:
+            # numSamples, numTimeSteps, numFeatures = data.shape
+            X = data[:, :, :self.s_dim]
+            U = data[:, :, self.s_dim:]
+            dX = np.diff(X, axis=1)
+            X = X[:, :-1, :].reshape(-1, self.s_dim)  # to make dimension of dX same as X
+            U = U[:, :-1, :].reshape(-1, U.shape[2])
+            stateAction = np.hstack((X, U))
+            dX = dX.reshape(-1, dX.shape[2])
+        else:
+            X = data[:, :self.s_dim]
+            U = data[:, self.s_dim:]
+            dX = np.diff(X, axis=0)
+            stateAction = np.hstack((X, U))[:-1]
         if fit:
-            if self.model=='DNN':
-                self.scalarX.fit(X)
-                self.scalarU.fit(U)
-                self.scalardX.fit(dX)
-                joblib.dump(self.scalarX, 'save_scalars/scalarX_float_base.gz')
-                joblib.dump(self.scalarU, 'save_scalars/scalarU_float_base.gz')
-                joblib.dump(self.scalardX, 'save_scalars/scalardX_float_base.gz')
-            elif self.model=='LSTM':
-                self.scalarX.fit(X)
-                self.scalarU.fit(U)
-                self.scalardX.fit(dX)
-                joblib.dump(self.scalarX, 'save_scalars/scalarX_float_base_lstm.gz')
-                joblib.dump(self.scalarU, 'save_scalars/scalarU_float_base_lstm.gz')
-                joblib.dump(self.scalardX, 'save_scalars/scalardX_float_base_lstm.gz')
-        normX = self.scalarX.transform(X)
-        normU = self.scalarU.transform(U)
-        normdX = self.scalardX.transform(dX)
-
-        inputs = np.hstack((normX, normU))
-        inputs = inputs[:-1]  # to make same dimension as dX
-        outputs = normdX
+            inputs = self.scalarXU.fit_transform(stateAction)
+            outputs = self.scalardX.fit_transform(dX)
+            joblib.dump(self.scalarXU, 'save_scalars/scalarXU_float_base_lstm.gz')
+            joblib.dump(self.scalardX, 'save_scalars/scalardX_float_base_lstm.gz')
+        else:
+            inputs = self.scalarXU.transform(stateAction)  # fitting with scalar
+            outputs = self.scalardX.transform(dX)  # fitting with scalar
         return inputs, outputs
 
-    def dyn_model(self, in_dim, out_dim, model='DNN'):
+    def dyn_model(self, model='DNN'):
         ##############################################################
         """
         Layer Initializers
@@ -264,86 +238,57 @@ class MBRL:
         initializer = tf.keras.initializers.GlorotNormal(seed=None)
         if model == 'DNN':  # just fully connected feedforward neural networks
             model = tf.keras.Sequential([
-                tf.keras.Input(shape=(in_dim, )),
+           # total_reward, dataset, actions = mppi_polo.run_mppi(self.mppi_gym, self.env, retrain_dynamics=None,
+            #                                                     iter=iter, retrain_after_iter=100, render=True)
+             tf.keras.Input(shape=(self.s_dim+self.a_dim, )),
                 # tf.keras.layers.Dropout(0.2),
-                tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
-                # tf.keras.layers.Dropout(0.2),
-                # tf.keras.layers.LSTM(units=50),
-                tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer),
+                tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer,
+                                      kernel_regularizer=regularizers.l1_l2(l1=1e-5, l2=1e-4),
+                                      bias_regularizer=regularizers.l2(1e-4),
+                                      activity_regularizer=regularizers.l2(1e-5)
+                                      ),
+                tf.keras.layers.Dropout(0.02),
+                tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer,
+                                      kernel_regularizer=regularizers.l1_l2(l1=1e-5, l2=1e-4),
+                                      bias_regularizer=regularizers.l2(1e-4),
+                                      activity_regularizer=regularizers.l2(1e-5)
+                                      ),
                 # tf.keras.layers.Dropout(0.2),
                 # tf.keras.layers.Dense(256, activation='relu'),
                 # tf.keras.layers.Dropout(0.2),
                 # tf.keras.layers.Dense(256, activation='relu'),
-                tf.keras.layers.Dense(out_dim),
+                tf.keras.layers.Dense(self.s_dim),
             ])
         else:  # LSTM
-
-            ts_inputs = tf.keras.Input(shape=(in_dim, 1))
+            ts_inputs = tf.keras.Input(shape=(self.bootstrapIter-1, self.s_dim+self.a_dim))
             x = tf.keras.layers.LSTM(units=50)(ts_inputs)
             x = tf.keras.layers.Dropout(0.05)(x)
             x = tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer)(x)
             x = tf.keras.layers.Dense(512, activation='relu', kernel_initializer=initializer)(x)
-            outputs = tf.keras.layers.Dense(out_dim, activation='linear')(x)
+            outputs = tf.keras.layers.Dense(self.s_dim, activation='linear')(x)
             model = tf.keras.Model(inputs=ts_inputs, outputs=outputs)
 
-        #"""
-        # Sequential Model
-        #################
         # model.compile(optimizer='adam', loss='kl_divergence', metrics=['accuracy'])
         # model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
         # """
-        model.compile(optimizer='Adam', loss='mse')
+        model.compile(optimizer=self.dyn_opt, loss='mse')
         # model.compile(optimizer=optimizer, loss='mse')
+        model.summary()
         return model
 
     def angle_normalize(self, x):
         return ((x + np.pi) % (2 * np.pi)) - np.pi
 
-    def resh(self, innp):
-        return innp.reshape(*innp.shape, 1)
+    def train(self, dataset):
+        inputs, outputs = self.preprocess(dataset)
+        self.fitModel(inputs, outputs)
 
-    def train(self, dataset, fit=False, preprocessVal=False):
-        """
-        Trying to find the increment in states, f_(theta), from the equation
-        s_{t+1} = s_t + dt * f_(theta)(s_t, a_t)
-
-        states for a spacerobot: there is a free-floating base (passive joints) and a 7-DoF arm (active joints).
-        base: (x, y, z, qx, qy, qz, qw) ; arm: (q1, q2, q3, q4, q5, q6, q7)
-        and the corresponding velocities
-        """
-
-        # manip_joint_angles, manip_joint_vel, actions = dataset[:, 7:14], dataset[:, 20:27], dataset[:, 27:]
-        # manip_joint_angles = self.angle_normalize(manip_joint_angles)
-        # actions = np.clip(actions, self.a_low, self.a_high)
-        # xu = np.hstack((manip_joint_angles, manip_joint_vel, actions))
-        # dtheta_manip = manip_joint_angles[1:, :] - manip_joint_angles[:-1, :]
-        # # dtheta_manip = angular_diff_batch(manip_joint_angles[1:, :], manip_joint_angles[:-1, :])
-        # dtheta_dt_manip = manip_joint_vel[1:, :] - manip_joint_vel[:-1, :]
-        # Y = np.hstack((dtheta_manip, dtheta_dt_manip))  # x' - x residual
-        # xu = xu[:-1]  # make same size as Y
-        if self.randData is not None:
-            n1, n2 = self.randData.shape[0], self.augData.shape[0]
-            newData1 = self.randData[np.random.choice(n1, n1//5, replace=False), :]
-            newData2 = self.augData[np.random.choice(n2, n2//3, replace=False), :]
-            Data = np.vstack((newData1, newData2, dataset))
-            # Data = dataset
-        else:
-            Data = np.vstack((self.augData, dataset))
-        inputs, outputs = self.preprocess(Data, fit=fit)
-        if preprocessVal:
-            self.X_val, self.Y_val = self.preprocess(self.storeValData, fit=False)
-        if self.model == 'LSTM':
-            inputs = self.resh(inputs)
-            outputs = self.resh(outputs)
-            if not self.X_val.ndim == 3:
-                self.X_val = self.resh(self.X_val)
-                self.Y_val = self.resh(self.Y_val)
-
+    def fitModel(self, inputs, outputs):
         tensorboard = TensorBoard(log_dir="logs/{}".format(time.time()) + 'float_base')
         self.dyn.fit(
                     inputs,
                     outputs,
-                    batch_size=400,
+                    batch_size=128,
                     epochs=self.epochs,
                     # We pass some validation for
                     # monitoring validation loss and metrics
@@ -354,31 +299,10 @@ class MBRL:
                     )
         self.losses = pd.DataFrame(self.dyn.history.history)
         print('hi')
-        # create scaler
-        # fit and transform in one step
-        # normalized = scaler.fit_transform(dataset)
-        # nor_states, nor_actions = normalized[:, :s_dim], normalized[:, s_dim:]
-        # Y = nor_states[1:, :] - nor_states[:-1, :]  # true_state_residual
-        # xu = normalized[:-1]
-        # fwd_dyn_nn.fit(xu, Y, epochs=100)
-
-        # inverse transform
-        # inverse = scaler.inverse_transform(normalized)
-
-        # dataset[:, 7:14] = angle_normalize(dataset[:, 7:14])  # 7:14 are manip joint angles
-        # dtheta_manip = angular_diff_batch(dataset[1:, 7:14], dataset[:-1, 7:14])
-        # dtheta_dt_manip = dataset[1:, 20:27] - dataset[:-1, 20:27]
-        # dtheta_base = dataset[1:, :7] - dataset[:-1, :7]
-        # dtheta_dt_base = dataset[1:, 14:20] - dataset[:-1, 14:20]
-        # Y = np.hstack((dtheta_base,  dtheta_manip, dtheta_dt_base, dtheta_dt_manip))  # x' - x residual
-        # xu = dataset[:-1]  # make same size as Y
-        # fwd_dyn_nn.fit(xu, Y, epochs=500)
 
     def bootstrapAugment(self, n_rollouts, n_iter_per_rollout):
-        new_data = np.zeros((n_iter_per_rollout, self.s_dim + self.a_dim))
-        dataset = list()
+        new_data = np.zeros((n_rollouts, n_iter_per_rollout, self.s_dim + self.a_dim))
         self.env_cpy.reset()
-        # for j in range(50):
         qp, qv = qpos, qvel
         for k in range(n_rollouts):
             self.env_cpy.set_env_state(qp, qv)
@@ -386,64 +310,40 @@ class MBRL:
                 pre_action_state = self.env_cpy.state_vector()  # [num_base_states:]
                 action = np.random.uniform(low=self.a_low, high=self.a_high) + np.random.normal(loc=0, scale=0.01, size=7)
                 self.env_cpy.step(action)
-                # env_cpy.render()
-                new_data[i, :self.s_dim] = pre_action_state
-                new_data[i, self.s_dim:] = action
-            new_data = np.flip(new_data, axis=0)
-            dataset.append(new_data)
-        data = np.concatenate(dataset, axis=0)
-        # # np.save('data.npy', new_data, allow_pickle=True)
-        # if train:
-        #     self.train(data, fit=self.fit, preprocessVal=True)
-        # if storeData:
-        #     self.storeData = data
-        # # logger.info("bootstrapping finished")
+                new_data[k, i, :self.s_dim] = pre_action_state
+                new_data[k, i, self.s_dim:] = action
+        new_data = np.flip(new_data, axis=1)
         self.env_cpy.reset()
-        self.augData = data
-        return data
+        return new_data
 
-    def bootstrap(self, n_rollouts, n_iter_per_rollout, storeData=False, train=False, model='DNN'):
-        # logger.info("bootstrapping with random action for %d actions", self.bootstrapIter)
-        new_data = np.zeros((n_iter_per_rollout, self.s_dim + self.a_dim))
-        # dataAugment = self.bootstrapAugment(n_rollouts//2, n_iter_per_rollout)
-        # new_data = np.zeros((bootstrapIter, num_arm_states+a_dim))
-        dataset = list()
+    def bootstrap(self, n_rollouts, n_iter_per_rollout):
+        new_data = np.zeros((n_rollouts*self.startConfigIter, n_iter_per_rollout, self.s_dim + self.a_dim))
         self.env_cpy.reset()
-        for j in range(50):
+        nr = 0
+        for j in range(self.startConfigIter):
             qp, qv = self.env_cpy.get_env_state()
             for k in range(n_rollouts):
                 self.env_cpy.set_env_state(qp, qv)
+                az = nr*n_rollouts + k
                 for i in range(n_iter_per_rollout):
                     pre_action_state = self.env_cpy.state_vector()  # [num_base_states:]
                     action = np.random.uniform(low=self.a_low, high=self.a_high) + np.random.normal(loc=0, scale=0.01, size=7)
                     self.env_cpy.step(action)
-                    # env_cpy.render()
-                    new_data[i, :self.s_dim] = pre_action_state
-                    new_data[i, self.s_dim:] = action
-                dataset.append(new_data)
-        # dataset.append(dataAugment)
-        data = np.concatenate(dataset, axis=0)
-        # np.save('data.npy', new_data, allow_pickle=True)
-        if storeData:
-            self.randData = data
-        if train:
-            self.train(data, fit=self.fit, preprocessVal=True)
-        # logger.info("bootstrapping finished")
+                    new_data[az, i, :self.s_dim] = pre_action_state
+                    new_data[az, i, self.s_dim:] = action
+            nr += 1
         self.env_cpy.reset()
-        return data
+        return new_data
 
-    def loss(self, data):
-        """
-        :param data: a batch of (state, action) concatenated
-        :return: loss = (1/N)*(Y - f(X_i))**2 for a batch
-        """
-        N = data.shape[0]
-        inputs, outputs = self.preprocess(data)  # inputs = normalized (state, action), outputs = normalized (s'-s)
-        Ypred = self.dyn(inputs)
-        loss_ = tf.math.reduce_mean(tf.math.square(Ypred - outputs))
-        return loss_
+    def bootstrapDataTrain(self, X, Y):
+        self.fitModel(X, Y)
 
-    def collectValdata(self, val_num, iter):
+    def collectBootstrapData(self, val_num, iter):
+        new_data = self.bootstrap(val_num, iter)
+        print('Finished collecting Bootstrap dataset')
+        return new_data
+
+    def collectValData(self, val_num, iter):
         new_data = self.bootstrap(val_num, iter)
         print('Finished collecting validation dataset')
         return new_data
@@ -463,38 +363,14 @@ class MBRL:
         network.load_weights('save_weights/%s' % name)
         return network
 
-    def check_model(self, dyn_model=None):
-        s0 = self.env.reset()
-        s1 = np.hstack((s0[7:14], s0[20:27]))
-        print('starting_state:', s1)
-        if dyn_model:
-            dyn = dyn_model
-        else:
-            dyn = self.dyn
-        for _ in range(100):
-            act = self.env.action_space.sample()
-            s2 = np.hstack((s1, act))
-            obs_actual, _, _, _ = self.env.step(act)
-            obs_pred = s1 + self.dt * np.squeeze(dyn(s2[None, :]).numpy())
-            s1 = obs_pred
-
-        obs_actual = np.hstack((obs_actual[7:14], obs_actual[20:27]))
-
-        # obs = np.array([-1., 0., 0.03])  # [cos(theta), sin(theta), theta_dot] corresponding to theta = pi
-        # self.env.state = [np.pi, 0.03]
-        # print('action taken:', act)
-        print('current_state:', obs_actual)
-        print('Predicted state:', obs_pred)
-        print('differece:', obs_actual - obs_pred)
-
 
 if __name__ == '__main__':
 
     dyn = 0
     render = 0
     retrain_after_iter = 100
-    # model = 'DNN'
-    model = 'LSTM'
+    model = 'DNN'
+    # model = 'LSTM'
     if dyn:
         bootstrap = 0
         train = 0
@@ -503,32 +379,17 @@ if __name__ == '__main__':
         train = 1
     if dyn:
         mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, dynamics=None, reward=None,
-                    horizon=20,
-                    rollouts=30, epochs=150, bootstrapIter=3, bootstrap_rollouts=3
-                    )  # to run using env.step()
+                    horizon=20, rollouts=30, epochs=150, bootstrapIter=3,
+                    bootstrap_rollouts=3)  # to run using env.step()
     else:
 
-        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=40, model=model,
-                    rollouts=600, epochs=150, bootstrapIter=40, bootstrap_rollouts=500,
-                    bootstrap=bootstrap)  # to run using dyn and rew
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=30, model=model,
+                    rollouts=400, epochs=150, bootstrapIter=30, bootstrap_rollouts=200,
+                    bootstrap=bootstrap, startConfigIter=50, val_rollout=200, val_iter_per_rollout=30)  # to run using dyn and rew
 
          # mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=5, model=model,
          #            rollouts=6, epochs=10, bootstrapIter=4, bootstrap_rollouts=5,
-         #            bootstrap=bootstrap)  # to run using dyn and rew
-    # statement = "mbrl.run_mbrl(train=train, iter=50)"
-    # cProfile.run(statement, filename="cpro.txt", sort=-1)
-    profiler = cProfile.Profile()
-    profiler.enable()
-    start = time.time()
-    mbrl.run_mbrl(train=train, iter=2000, render=render, retrain_after_iter=retrain_after_iter)
-    # print(time.time() - start)
-    profiler.disable()
-    stats = pstats.Stats(profiler).sort_stats('cumtime')
-    # stats = pstats.Stats(profiler).sort_stats('tottime')
-    stats.strip_dirs()
-    # stats.print_stats()
-    # stats.dump_stats('cpro_cython.prof')
-    # stats.dump_stats('cpro_python.prof')
-    # import snakeviz
-    # snakeviz "cpro.prof"
-    # mbrl.losses[['loss', 'val_loss']].plot()
+         #            bootstrap=bootstrap, startConfigIter=5, val_rollout=4, val_iter_per_rollout=3)  # to run using dyn and rew
+
+    mbrl.run_mbrl(train=train, iter=800, render=render, retrain_after_iter=retrain_after_iter)
+
