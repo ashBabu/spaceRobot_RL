@@ -119,8 +119,8 @@ class MBRL:
                                                                 iter=iter, retrain_after_iter=retrain_after_iter, render=render)
 
             if self.model == 'DNN':
-                np.save('actions_floatbase_testDnn_regularizer.npy', np.array(actions), allow_pickle=True)
-                self.save_weights(self.dyn, 'trainedWeights500_floatbase_testDnn_regularizer')
+                np.save('actions_floatbase_testDnn_regularizer1.npy', np.array(actions), allow_pickle=True)
+                self.save_weights(self.dyn, 'trainedWeights500_floatbase_testDnn_regularizer1')
             else:
                 np.save('actions_floatbase_lstm2_1.npy', np.array(actions), allow_pickle=True)
                 self.save_weights(self.dyn, 'trainedWeights500_floatbase_lstm2_1')
@@ -383,9 +383,9 @@ if __name__ == '__main__':
                     bootstrap_rollouts=3)  # to run using env.step()
     else:
 
-        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=30, model=model,
-                    rollouts=400, epochs=150, bootstrapIter=30, bootstrap_rollouts=200,
-                    bootstrap=bootstrap, startConfigIter=50, val_rollout=200, val_iter_per_rollout=30)  # to run using dyn and rew
+        mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=80, model=model,
+                    rollouts=600, epochs=150, bootstrapIter=80, bootstrap_rollouts=500,
+                    bootstrap=bootstrap, startConfigIter=50, val_rollout=300, val_iter_per_rollout=80)  # to run using dyn and rew
 
          # mbrl = MBRL(env_name='SpaceRobot-v0', lr=0.001, horizon=5, model=model,
          #            rollouts=6, epochs=10, bootstrapIter=4, bootstrap_rollouts=5,
