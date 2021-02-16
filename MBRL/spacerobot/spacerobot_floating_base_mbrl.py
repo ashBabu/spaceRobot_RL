@@ -28,10 +28,27 @@ np.set_printoptions(precision=3, suppress=True)
 print('This will work only with Tensorflow 2.x')
 gpus = tf.config.experimental.list_physical_devices('GPU')
 
-qpos=np.array([ 0.04 , -0.196,  4.877,  0.995, -0.026, -0.045,  0.084,  0.103,
-        0.559,  0.668,  0.048, -0.17 , -0.14 ,  0.201])
-qvel=np.array([0.00   ,  0.00   , 0.00   , 0.00   , 0.00,  0.00   , 0.00, 0.00,
-        0.00,  0.00, 0.00, 0.00,  0.00])
+################################################################
+# target1 = [-2, 0, 5.5]
+# qpos=np.array([ 0.04 , -0.196,  4.877,  0.995, -0.026, -0.045,  0.084,  0.103,
+#         0.559,  0.668,  0.048, -0.17 , -0.14 ,  0.201])
+# qvel=np.array([0.00   ,  0.00   , 0.00   , 0.00   , 0.00,  0.00   , 0.00, 0.00,
+#         0.00,  0.00, 0.00, 0.00,  0.00])
+######################################################################
+# target2 = [-2, -0.5, 5.]
+# qpos=np.array([0.019, -0.09 ,  4.933,  0.998, -0.02 , -0.035,  0.042, -0.139,
+#         0.237,  0.853, -0.217, -0.524,  0.232,  0.358])
+# qvel=np.array([-3.643e-04,  2.810e-04, -1.476e-04, -1.504e-04, -3.055e-04,
+#        -8.791e-05, -1.600e-03, -7.377e-04,  3.989e-03, -2.144e-03,
+#        -1.266e-03,  8.000e-04,  4.289e-04])
+#########################################################################
+target3 = [0, 2.5, 5.]
+qpos=np.array([-0.218, -0.389,  4.861,  0.91 , -0.013, -0.126,  0.394,  0.621,
+        2.98 ,  1.61 ,  0.327, -2.106, -2.004,  0.806])
+qvel=np.array([-6.487e-06,  1.672e-03,  7.721e-04,  9.462e-05, -9.215e-04,
+        1.720e-03,  3.114e-03,  8.306e-03,  4.512e-03,  2.483e-03,
+       -6.172e-03, -4.362e-04,  1.948e-03])
+##########################################################################
 
 # @jit
 class MBRL:
@@ -60,8 +77,8 @@ class MBRL:
 
         self.epochs = epochs
 
-        scalarXU = Path("save_scalars/scalarXU_float_base_lstm.gz")
-        self.load_scalars(scalarXU, modelName='float_base_lstm.gz')
+        scalarXU = Path("save_scalars/scalarXU_float_base_solved1.gz")
+        self.load_scalars(scalarXU, modelName='float_base_solved1.gz')
 
         if dynamics is None:
             self.dynamics = dynamics
@@ -74,22 +91,24 @@ class MBRL:
             self.reward = self.reward_batch
 
         if bootstrap:
+            self.dyn_opt = opt.Adam(learning_rate=self.lr)
+            self.dyn = self.dyn_model(model=self.model)
+            # self.dyn.load_weights('save_weights/trainedWeights500_floatbase_testDnn')
+            self.dyn.load_weights('save_weights/trainedWeights500_floatbase_target2')
             self.startConfigIter = startConfigIter
             self.bootstrap_rollouts = bootstrap_rollouts
             self.bootstrapIter = bootstrapIter
             self.val_rollout = val_rollout
             self.val_iter_per_rollout = val_iter_per_rollout
+            print('collecting data')
             self.randData = self.collectBootstrapData(self.bootstrap_rollouts, self.bootstrapIter)
             self.ValData = self.collectValData(self.val_rollout, self.val_iter_per_rollout)
             self.augData = self.bootstrapAugment(self.bootstrap_rollouts, self.bootstrapIter)
+            print('starting preprocessing')
             self.X_rand, self.Y_rand = self.preprocess(self.randData, fit=self.fit)
             self.X_val, self.Y_val = self.preprocess(self.ValData)
             self.X_aug, self.Y_aug = self.preprocess(self.augData)
             XtrainBootstrap, YtrainBootstrap = np.vstack((self.X_rand, self.X_aug)), np.vstack((self.Y_rand, self.Y_aug))
-
-            self.dyn_opt = opt.Adam(learning_rate=self.lr)
-            self.dyn = self.dyn_model(model=self.model)
-            self.dyn.load_weights('save_weights/trainedWeights500_floatbase_testDnn')
             self.bootstrapDataTrain(XtrainBootstrap, YtrainBootstrap)
             print('Finished bootsrapping and training the bootsrapped dataset')
 
@@ -119,8 +138,8 @@ class MBRL:
                                                                 iter=iter, retrain_after_iter=retrain_after_iter, render=render)
 
             if self.model == 'DNN':
-                np.save('actions_floatbase_testDnn_regularizer1.npy', np.array(actions), allow_pickle=True)
-                self.save_weights(self.dyn, 'trainedWeights500_floatbase_testDnn_regularizer1')
+                np.save('actions_floatbase_target3.npy', np.array(actions), allow_pickle=True)
+                self.save_weights(self.dyn, 'trainedWeights500_floatbase_target3')
             else:
                 np.save('actions_floatbase_lstm2_1.npy', np.array(actions), allow_pickle=True)
                 self.save_weights(self.dyn, 'trainedWeights500_floatbase_lstm2_1')
@@ -281,6 +300,13 @@ class MBRL:
 
     def train(self, dataset):
         inputs, outputs = self.preprocess(dataset)
+        # n1, n2 = self.X_rand.shape[0], self.X_aug.shape[0]
+        # X_rand = self.X_rand[np.random.choice(n1, n1 // 50, replace=False), :]
+        # Y_rand = self.Y_rand[np.random.choice(n1, n1 // 50, replace=False), :]
+        # X_aug = self.X_aug[np.random.choice(n2, n2 // 50, replace=False), :]
+        # Y_aug = self.Y_aug[np.random.choice(n2, n2 // 50, replace=False), :]
+        # inputs = np.vstack((inputs, X_aug, X_rand))
+        # outputs = np.vstack((outputs, Y_aug, Y_rand))
         self.fitModel(inputs, outputs)
 
     def fitModel(self, inputs, outputs):
