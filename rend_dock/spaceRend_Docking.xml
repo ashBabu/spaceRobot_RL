@@ -1,0 +1,140 @@
+<?xml version="1.0" ?>
+<mujoco model="free_floating_ISS">
+    <compiler angle="radian" />
+    <option timestep="0.2" iterations="30">
+        <flag gravity="disable" />
+    </option>
+    <asset>
+		<texture type="skybox" builtin="none" file="space.png" rgb1="1 1 1" rgb2=".6 .8 1" />
+        <texture name="texplane" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2" width="512" height="512"/>
+        <material name="MatGnd" reflectance="0.5" texture="texplane" texrepeat="1 1" texuniform="true"/>
+
+        <!-- <mesh name="ISS_viz" file="meshes/Jason-1_big.stl" scale='0.001 0.001 0.001'/> -->
+        <mesh name="ISS_viz" file="meshes/Jason-1.stl" scale='0.02 0.02 0.02'/>
+        <!-- <mesh name="ISS_viz" file="meshes/ISS.stl" scale='0.001 0.001 0.001'/> -->
+        <mesh name="satellite_viz" file="meshes/satellite.stl" scale='0.001 0.001 0.001'/>
+        <!-- <mesh name="hand_viz" file="meshes/visual/hand.stl"/> -->
+        <!-- <mesh name="finger_viz" file="meshes/collision/finger.stl" scale='1.75 1.0 1.75'/> -->
+    </asset>
+    <size njmax="1000" nconmax="100" />
+
+<!-- <contact>       
+        <exclude body1="right_upper_shoulder" body2="torso"/>
+        <exclude body1="right_upper_shoulder" body2="right_upper_elbow"/>
+        <exclude body1="right_lower_shoulder" body2="torso"/>
+
+        <exclude body1="left_upper_shoulder" body2="torso"/>
+        <exclude body1="left_upper_shoulder" body2="left_upper_elbow"/>
+        <exclude body1="left_lower_shoulder" body2="torso"/>
+        
+        <exclude body1="collision_head_link_1" body2="torso"/>
+        <exclude body1="collision_head_link_2" body2="torso"/>
+        <exclude body1="r_gripper_r_finger" body2="r_gripper_l_finger"/>
+        <exclude body1="l_gripper_r_finger" body2="l_gripper_l_finger"/>
+    </contact>
+ -->
+
+    <default>
+        <default class="panda">
+            <joint pos="0 0 0" axis="0 0 1" limited="true"/>
+            <position forcelimited="true" ctrllimited="true" user="1002 40 2001 -0.005 0.005"/>
+            <default class="spaceRobot_viz">
+                <geom contype="0" conaffinity="0" group="0" type="mesh" rgba=".95 .99 .92 1" mass="0"/>
+            </default>
+
+            <default class="spaceRobot_col">
+                <geom contype="1" conaffinity="1" group="3" type="mesh" rgba=".5 .6 .7 1"/>
+            </default>
+
+             <default class="spaceRobot_finger">
+                <joint damping="100" armature='5'/>
+                <geom friction="1 0.5 0.0001" solref="0.01 1" solimp="0.8 0.9 0.001" margin="0.001" user="0" rgba="0.5 0.6 0.7 .4" contype="1" conaffinity="0" condim="6" group="3" />
+                <position user="1002 40 2001 -0.0001 0.0001"/>
+            </default>
+        </default>
+
+    </default>
+
+    <worldbody>
+        <light directional="false" diffuse=".8 .8 .8" specular="0.3 0.3 0.3" pos="1  1 3" dir="-1 -1 -3"/>
+        <light directional="false" diffuse=".8 .8 .8" specular="0.3 0.3 0.3" pos="1 -1 3" dir="-1 1 -3"/>
+        <light directional="false" diffuse=".8 .8 .8" specular="0.3 0.3 0.3" pos="-1 0 3" dir="1 0 -3" />
+        <!-- <site name="debrisSite" pos="-1. 2.5 5." rgba="0.2 0.6 0.2 0.25" size=".5" type="sphere" /> -->
+        <body name="ISS" pos="1 1 -1" euler='0 30 0' childclass='spaceRobot_finger'>
+            <site name="ISScom" pos="0 0 0" rgba="0.2 0.6 0.2 0.25" size=".2" type="sphere" />
+            <inertial pos="-1.57863e-05 0.0118731 0.0434103" quat="0.705868 0.0310348 -0.0314925 0.706962" mass="0.0927059" diaginertia="6.57134e-05 6.09611e-05 1.09932e-05" />
+            <joint damping="200" name="issJoint1" pos="0 0 0" axis="0 0 1" limited="true" range="-3.14159e05 3.14159e05" type="hinge"/>
+            <joint damping="200" name="issJoint2" pos="0 0 0" axis="0 1 0" limited="true" range="-3.14159e05 3.14159e05" type="hinge"/>
+            <joint damping="200" name="issJoint3" pos="0 0 0" axis="1 0 0" limited="true" range="-3.14159e05 3.14159e05" type="hinge"/>
+            <joint damping="200" name="issJoint4" pos="0 0 0" axis="0 0 1" type="slide" limited="true" range="0 1.0e05"/>
+            <joint damping="200" name="issJoint5" pos="0 0 0" axis="0 1 0" type="slide" limited="true" range="0 1.0e05"/>
+            <joint damping="200" name="issJoint6" pos="0 0 0" axis="1 0 0" type="slide" limited="true" range="0 1.0e05"/>
+            <geom pos="0 0 0" euler='0 0 0' class="spaceRobot_viz" mesh="ISS_viz"/>
+        </body>
+
+        <body name="chaser" pos="0 0 0" euler='0 0 0'  childclass='spaceRobot_finger'>
+            <site name="chaseCom" pos="0 0 0" rgba="0.2 0.6 0.2 0.25" size=".02" type="sphere" />
+            <inertial pos="0 0 0" quat="0 0 0 1" mass="1" diaginertia="6.57e-05 6.09e-05 1.09e-05" />
+            <joint damping="200" name="satJoint1" pos="0 0 0" axis="0 0 1" limited="true" range="-3.14159e05 3.14159e05" type="hinge" />
+            <joint damping="200" name="satJoint2" pos="0 0 0" axis="0 1 0" limited="true" range="-3.14159e05 3.14159e05" type="hinge" />
+            <joint damping="200" name="satJoint3" pos="0 0 0" axis="1 0 0" limited="true" range="-3.14159e05 3.14159e05" type="hinge" />
+            <joint damping="200" name="satJoint4" pos="0 0 0" axis="0 0 1" type="slide" limited="true" range="0 1.0e05" />
+            <joint damping="200" name="satJoint5" pos="0 0 0" axis="0 1 0" type="slide" limited="true" range="0 1.0e05" />
+            <joint damping="200" name="satJoint6" pos="0 0 0" axis="1 0 0" type="slide" limited="true" range="0 1.0e05" />
+            <geom pos="0 0 0" euler='0 0 0' class="spaceRobot_viz" mesh="satellite_viz"/>
+            <camera euler="0 0 0" fovy="40" name="rgb_ash" pos="0 0 0" ></camera>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <motor name="motor1" joint="satJoint1" ctrlrange="-3 3" ctrllimited="true" />
+        <motor name="motor2" joint="satJoint2" ctrlrange="-3 3" ctrllimited="true" />
+        <motor name="motor3" joint="satJoint3" ctrlrange="-3 3" ctrllimited="true" />
+        <motor name="motor4" joint="satJoint4" ctrlrange="-3 3" ctrllimited="true" />
+        <motor name="motor5" joint="satJoint5" ctrlrange="-3 3" ctrllimited="true" />
+        <motor name="motor6" joint="satJoint6" ctrlrange="-3 3" ctrllimited="true" />
+
+        <motor name="motor7"  joint="issJoint1" ctrlrange="-3 3" ctrllimited="true" />
+        <motor name="motor8"  joint="issJoint2" ctrlrange="-3 3" ctrllimited="true" />
+        <motor name="motor9"  joint="issJoint3" ctrlrange="-3 3" ctrllimited="true" />
+        <motor name="motor10" joint="issJoint4" ctrlrange="-3 3" ctrllimited="true" />
+        <motor name="motor11" joint="issJoint5" ctrlrange="-3 3" ctrllimited="true" />
+        <motor name="motor12" joint="issJoint6" ctrlrange="-3 3" ctrllimited="true" />
+    </actuator>
+
+    <!-- <actuator>
+        <position name="motor1" kp="870" joint="satJoint1" ctrlrange="-3 3" ctrllimited="true" forcerange="-87 87" />
+        <position name="motor2" kp="870" joint="satJoint2" ctrlrange="-3 3" ctrllimited="true" forcerange="-87 87" />
+        <position name="motor3" kp="870" joint="satJoint3" ctrlrange="-3 3" ctrllimited="true" forcerange="-87 87" />
+        <position name="motor4" kp="870" joint="satJoint4" ctrlrange="-3 3" ctrllimited="true" forcerange="-87 87" />
+        <position name="motor5" kp="120" joint="satJoint5" ctrlrange="-3 3" ctrllimited="true" forcerange="-87 87" />
+        <position name="motor6" kp="120" joint="satJoint6" ctrlrange="-3 3" ctrllimited="true" forcerange="-87 87" />
+
+        <position name="motor7" kp="120"  joint="issJoint1" ctrlrange="-3 3" ctrllimited="true" forcerange="-87 87" />
+        <position name="motor8" kp="120"  joint="issJoint2" ctrlrange="-3 3" ctrllimited="true" forcerange="-87 87" />
+        <position name="motor9" kp="120"  joint="issJoint3" ctrlrange="-3 3" ctrllimited="true" forcerange="-87 87" />
+        <position name="motor10" kp="120" joint="issJoint4" ctrlrange="-3 3" ctrllimited="true" forcerange="-87 87" />
+        <position name="motor11" kp="120" joint="issJoint5" ctrlrange="-3 3" ctrllimited="true" forcerange="-87 87" />
+        <position name="motor12" kp="120" joint="issJoint6" ctrlrange="-3 3" ctrllimited="true" forcerange="-87 87" />
+    </actuator> -->
+
+    <sensor>
+        <!-- <gyro name="baseGyro" site="baseSite" noise="0.001" /> -->
+        <!-- <accelerometer name="baseAccel" site="baseSite" noise="0.001" /> -->
+        <jointpos name="encoderPos1" joint="satJoint1" noise="0.001" />
+        <jointpos name="encoderPos2" joint="satJoint2" noise="0.001" />
+        <jointpos name="encoderPos3" joint="satJoint3" noise="0.001" />
+        <jointpos name="encoderPos4" joint="satJoint4" noise="0.001" />
+        <jointpos name="encoderPos5" joint="satJoint5" noise="0.001" />
+        <jointpos name="encoderPos6" joint="satJoint6" noise="0.001" />
+
+        <jointpos name="encoderPos7" joint="issJoint1" noise="0.001" />
+        <jointvel name="encoderVel1" joint="issJoint2" noise="0.001" />
+        <jointvel name="encoderVel2" joint="issJoint3" noise="0.001" />
+        <jointvel name="encoderVel3" joint="issJoint4" noise="0.001" />
+        <jointvel name="encoderVel4" joint="issJoint5" noise="0.001" />
+        <jointvel name="encoderVel5" joint="issJoint6" noise="0.001" />
+    </sensor>
+
+</mujoco>
+
